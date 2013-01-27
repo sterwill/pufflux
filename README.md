@@ -7,7 +7,7 @@ puffy cloud hanging in my house to tell me the weather.
 ## Diagram
 
 <pre>
- { wunderground.org } \<-(http)-> pufflux-query -(serial)-> pufflux-transmitter -(radio)-> pufflux-receiver
+ { wunderground.org } &lt;-(http)-> pufflux-query -(serial)-> pufflux-transmitter -(radio)-> pufflux-receiver
 </pre>
 
 pufflux-query runs via cron, its output is redirected to an Arduino 

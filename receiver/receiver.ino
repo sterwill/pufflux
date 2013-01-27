@@ -18,18 +18,6 @@
 
 #include <avr/pgmspace.h>
 
-/*
- * Where the LEDs are:
- *
- * -4B,4A---------2A,2B-
- *        |     |
- *        |5B,5A|
- *        |     |
- * -3B,3A---------1A,1B-
- *           ^
- *     front |
- */
- 
 /* 
  * Choose the port (pin group) and matching direction control register that 
  * contains the pins which control your 5 LEDs strips.  Choices are PORTB with 
@@ -50,6 +38,35 @@
  */
 #define LED_PORT PORTC
 #define LED_DDR  DDRC
+
+/*
+ * Where the LEDs are:
+ *
+ *  -1,2---------4,5-
+ *       |  3  |
+ *       |  8  |
+ *  -6,7---------9,10
+ *           ^
+ *     front |
+ */
+
+/*
+ * Addresses of the LEDs in order 0-9; make them match that map.
+ *
+ * The high nibble is the 0-based pin in the port.  The low nibble 
+ * is the 0-based offset of the LED in the strip controlled by the specified pin.
+ */
+const byte leds[10] = { 0x31, 0x30, 0x41, 0x10, 0x11, 0x21, 0x20, 0x40, 0x00, 0x01 };
+
+/*
+ * The order in which the LEDs must be programmed.  All the offset-0 LEDs
+ * must immediately precede their offset-1 partner on the same pin.
+ */
+const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
+
+/************************************************************************/
+/* You probably don't need to change anything below here.               */
+/************************************************************************/
 
 /*
  * You can change the RGB values of these colors, but don't change the
@@ -88,10 +105,6 @@ const uint32_t rgb_values[9] = {
 #define ANIM_PULSE_ID         3
 #define ANIM_SWIRL_ID         4
 
-/************************************************************************/
-/* You probably don't need to change anything below here.               */
-/************************************************************************/
-
 #define RGB2GBR(c) (((c & 0xff0000) >> 16) | ((c & 0x00ff00) << 8) | ((c & 0x0000ff) << 8)) 
 
 #define ANIM_GET_MASK 0b0000000000000111
@@ -113,15 +126,22 @@ const uint32_t rgb_values[9] = {
 #define LEDS_HIGH(pins) (LED_PORT |= (0b00011111 & pins))
 #define LEDS_LOW(pins)  (LED_PORT &= (0b11100000 & pins))
 
+// All colors are RGB order in this struct
 struct cloud_state {
+  // Command fields
   byte animation;
   bool fast;
   uint32_t base_color;
-  uint32_t highlight_color;  
-  
-  byte frame;
-  unsigned long last_frame_time;
+  uint32_t highlight_color;
+
+  // LED states
+  uint32_t target_colors[10];
+  uint32_t current_colors[10];
+
+  // Timing  
+  unsigned long last_animated;
 };
+static struct cloud_state state;
 
 void setup() {
   // For debugging
@@ -135,28 +155,28 @@ void setup() {
 }
 
 void loop() {
-  struct cloud_state state;
-  state.animation = ANIM_FLOOD_ID;
-  state.fast = true;
-  state.base_color = COLOR_WHITE_ID;
-  state.highlight_color = COLOR_RED_ID;
-  state.frame = 0;
-  state.last_frame_time = 0;
-
+  state.animation = ANIM_SWIRL_ID;
+  state.fast = false;
+  state.base_color = COLOR_YELLOW_ID;
+  state.highlight_color = COLOR_DARK_BLUE_ID;
+  memset(state.target_colors, 0, sizeof(state.target_colors));
+  memset(state.current_colors, 0, sizeof(state.current_colors));
+  state.last_animated;
+  
   uint16_t command;
   
-  print_state(state);
+  print_state();
   while (true) {
     if (read_command(command)) {
-      decode_command(command, state);
-      print_state(state);
+      decode_command(command);
+      print_state();
     }
     
-    animate(state);
+    animate();
   }
 }
 
-void print_state(const struct cloud_state & state) {
+void print_state() {
   Serial.println("----------");
   Serial.print("Animation: ");
   Serial.println(state.animation);
@@ -168,14 +188,11 @@ void print_state(const struct cloud_state & state) {
   Serial.println(state.highlight_color);
 }
 
-void decode_command(uint16_t command, struct cloud_state & state) {
+void decode_command(uint16_t command) {
   state.animation = (command & ANIM_GET_MASK);
   state.fast = (command & SPEED_GET_MASK) >> 3;
   state.base_color = (command & BASE_COLOR_GET_MASK) >> 8;
   state.highlight_color = (command & HIGHLIGHT_COLOR_GET_MASK) >> 12;
-  
-  state.frame = 0;
-  state.last_frame_time = 0;
 }
 
 bool read_command(uint16_t & command) {
@@ -184,29 +201,32 @@ bool read_command(uint16_t & command) {
   return false;
 }
 
-void animate(struct cloud_state & state) {
+void animate() {
   switch (state.animation) {
     case ANIM_PRECIPITATION_ID:
-      animate_precipitation(state);
+      animate_precipitation();
       break;
     case ANIM_FLOOD_ID:
-      animate_flood(state);
+      animate_flood();
       break;
     case ANIM_PULSE_ID:
-      animate_pulse(state);
+      animate_pulse();
       break;
     case ANIM_SWIRL_ID:
-      animate_swirl(state);
+      animate_swirl();
       break;
     case ANIM_DEFAULT_ID:
     default:
-      animate_default(state);
+      animate_default();
       break;
   }
+
+  step_colors();
+  update_leds();
 }
 
 // A randomly twinkling animation
-void animate_precipitation(struct cloud_state & state) {
+void animate_precipitation() {
   boolean enabled[10];  
   for (byte i = 0; i < 10; i++) {
     enabled[i] = (boolean) random(2);
@@ -229,8 +249,9 @@ void animate_precipitation(struct cloud_state & state) {
 }
 
 // Colors move in waves from one end to the other
-void animate_flood(const struct cloud_state & state) {
-  static boolean flood_queue[6] = {false, false, false, false, false, false};
+void animate_flood() {
+  const byte queue_size = 5;
+  static boolean flood_queue[queue_size] = {false, false, false, false, false};
   uint32_t base_color_bgr = RGB2GBR(rgb_values[state.base_color]);
   uint32_t highlight_color_bgr = RGB2GBR(rgb_values[state.highlight_color]);
 
@@ -239,15 +260,15 @@ void animate_flood(const struct cloud_state & state) {
   noInterrupts();
 
   // left side
+  send(0b00001000, flood_queue[3] ? highlight_color_bgr : base_color_bgr);
   send(0b00001000, flood_queue[4] ? highlight_color_bgr : base_color_bgr);
-  send(0b00001000, flood_queue[5] ? highlight_color_bgr : base_color_bgr);
   
+  send(0b00000100, flood_queue[3] ? highlight_color_bgr : base_color_bgr);
   send(0b00000100, flood_queue[4] ? highlight_color_bgr : base_color_bgr);
-  send(0b00000100, flood_queue[5] ? highlight_color_bgr : base_color_bgr);
 
   // middle
   send(0b00010000, flood_queue[2] ? highlight_color_bgr : base_color_bgr);
-  send(0b00010000, flood_queue[3] ? highlight_color_bgr : base_color_bgr);
+  send(0b00010000, flood_queue[2] ? highlight_color_bgr : base_color_bgr);
 
   // right side
   send(0b00000010, flood_queue[1] ? highlight_color_bgr : base_color_bgr);
@@ -259,98 +280,135 @@ void animate_flood(const struct cloud_state & state) {
   interrupts();
 
   // Shift items toward the head of the queue
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < queue_size - 1; i++) {
     flood_queue[i] = flood_queue[i + 1];
   }
 
   // Compute new tail element
-  flood_queue[5] = random(6) == 0;
+  flood_queue[queue_size - 1] = random(6) == 0;
 
   delay(state.fast ? 200 : 500);
 }
 
-void animate_pulse(const struct cloud_state & state) {
+void animate_pulse() {
+  static unsigned long last_time = 0;
+  static boolean phase = false;
+  unsigned long time = millis();
+  
+  if (time - last_time > 1000) {
+    for (int i = 0; i < 10; i++) {
+      if (phase) {
+        set_color(i, state.base_color);
+      } else {
+        set_color(i, state.highlight_color);        
+      }
+    }
+    phase = !phase;
+    last_time = time;
+  }
 }
 
 // Colors move in a circle, down one side, then down the other in the opposite direction
-void animate_swirl(const struct cloud_state & state) {
-  // The middle segment uses 4 indices in this animation
-  static byte swirl_queue[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 1};
-
-  uint32_t colors[3];
-  colors[0] = RGB2GBR(rgb_values[COLOR_BLACK_ID]);
-  colors[1] = RGB2GBR(rgb_values[state.base_color]);
-  colors[2] = RGB2GBR(rgb_values[state.highlight_color]);
+void animate_swirl() {
+  static unsigned long last_time = 0;
+  static byte swirl_queue[10] = {0, 0, 0, 0, 0, 0, 0, 1, 2, 1};
+  unsigned long time = millis();
+  const short period = state.fast ? 60 : 200;
+  
+  // Set the colors from the queue
+  byte color_ids[3];
+  color_ids[0] = COLOR_BLACK_ID;
+  color_ids[1] = state.base_color;
+  color_ids[2] = state.highlight_color;
 
   // See the map at the top of this file.
+  set_color(0, color_ids[swirl_queue[9]]);
+  set_color(1, color_ids[swirl_queue[8]]);
+  set_color(2, color_ids[swirl_queue[7]]);
+  set_color(3, color_ids[swirl_queue[6]]);
+  set_color(4, color_ids[swirl_queue[5]]);
+  set_color(9, color_ids[swirl_queue[4]]);
+  set_color(8, color_ids[swirl_queue[3]]);
+  set_color(7, color_ids[swirl_queue[2]]);
+  set_color(6, color_ids[swirl_queue[1]]);
+  set_color(5, color_ids[swirl_queue[0]]);
   
-  noInterrupts();
-
-  // front left
-  send(0b00000100, colors[swirl_queue[10]]);
-  send(0b00000100, colors[swirl_queue[11]]);
-  
-  // middle
-  send(0b00010000, max(colors[swirl_queue[8]], colors[swirl_queue[3]]));
-  send(0b00010000, max(colors[swirl_queue[9]], colors[swirl_queue[2]]));
-
-  // front right
-  send(0b00000001, colors[swirl_queue[7]]);
-  send(0b00000001, colors[swirl_queue[6]]);
-  
-  // rear right 
-  send(0b00000010, colors[swirl_queue[4]]);
-  send(0b00000010, colors[swirl_queue[5]]);
-  
-  // already handled these incides for the middle
-  
-  // rear left
-  send(0b00001000, colors[swirl_queue[1]]);
-  send(0b00001000, colors[swirl_queue[0]]);
- 
-  interrupts();
-
-  // Rotate the queue one place toward the head
-  byte head = swirl_queue[0];
-  for (byte i = 0; i < 11; i++) {
-    swirl_queue[i] = swirl_queue[i + 1];
+  // Rotate the queue one place if the period has elapsed
+  if (time - last_time > period) {
+    byte head = swirl_queue[0];
+    for (byte i = 0; i < 9; i++) {
+      swirl_queue[i] = swirl_queue[i + 1];
+    }
+    swirl_queue[9] = head;
+    
+    last_time = time;
   }
-  swirl_queue[11] = head;
-
-  delay(state.fast ? 120 : 300);
-
 }
 
-void animate_default(const struct cloud_state & state) {
+void animate_default() {
 }
 
 /*
-  short deltaRed = 1;
-  byte red = minVal;
-  
-  short deltaGreen = 2;
-  byte green = minVal + 20;
-  
-  short deltaBlue = 3;
-  byte blue = minVal + 30;
-  
-  while (true) {
-    fade(red, deltaRed);
-    fade(green, deltaGreen);
-    fade(blue, deltaBlue);
-    uint32_t color = ((uint32_t) green << 16) | ((uint32_t) blue << 8) | red;
-//    Serial.println(color);
-
-    noInterrupts();
-    for (int j = 0; j < 10; j++) {
-      send_strip(color);
-    }
-    interrupts();
-    delay(50);
-  }
-
+ * Sets the desired indexed color for the specified LED.
+ */
+void set_color(const byte led, const byte color_id) {
+  state.target_colors[led] = rgb_values[color_id];
 }
-*/
+
+/*
+ * Changes the "current" colors to be one step closer to the "target" colors.
+ * Colors are interpolated linearly.
+ */
+void step_colors() {
+  const byte delta = state.fast ? 2 : 1;
+  for (int i = 0; i < 10; i++){
+    uint32_t current = state.current_colors[i];
+    uint32_t target = state.target_colors[i];
+
+    byte cur_r = (current >> 16) & 0xff;
+    byte cur_g = (current >> 8) & 0xff;
+    byte cur_b = (current) & 0xff;
+    byte tar_r = (target >> 16) & 0xff;
+    byte tar_g = (target >> 8) & 0xff;
+    byte tar_b = (target) & 0xff;
+    
+    short diff_r = tar_r - cur_r;
+    short diff_g = tar_g - cur_g;
+    short diff_b = tar_b - cur_b;
+    
+    byte adjust;
+   
+    adjust = min(abs(diff_r), delta);
+    cur_r += (diff_r >= 0) ? adjust : -adjust;
+    
+    adjust = min(abs(diff_g), delta);
+    cur_g += (diff_g >= 0) ? adjust : -adjust;
+    
+    adjust = min(abs(diff_b), delta);
+    cur_b += (diff_b >= 0) ? adjust : -adjust;
+
+    state.current_colors[i] = ((uint32_t) cur_r << 16) | ((uint32_t) cur_g << 8) | ((uint32_t) cur_b);
+  }
+}
+
+/*
+ * Updates the colors of all the LEDs to their "current" colors.
+ */
+void update_leds() {
+  noInterrupts();
+  for (int i = 0; i < 10; i++) {
+    // Get the led index from the order array
+    const byte led = led_send_order[i];
+    const byte led_address = leds[led];
+    
+    // Crack the address into pin and offset
+    byte pin_mask = 0x1 << ((led_address & 0b11110000) >> 4);
+    byte offset = (led_address & 0b00001111);
+
+    send(pin_mask, RGB2GBR(state.current_colors[led]));
+  }
+  interrupts();
+}
 
 /*
  * Resets the LED controllers on all pins.  LEDs turn off.
@@ -362,8 +420,8 @@ void reset_leds() {
 
   // All off (two deep)
   noInterrupts();
-  send(0b11111111, 0x000000);
-  send(0b11111111, 0x000000);
+  send(0b00011111, 0x000000);
+  send(0b00011111, 0x000000);
   interrupts();
 }
 
@@ -428,3 +486,5 @@ void linear_fade(byte & channel, short & delta, const byte minVal, const byte ma
     channel += delta;
   }
 }
+
+

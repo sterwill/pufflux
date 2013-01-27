@@ -4,27 +4,45 @@ package com.tinfig.pufflux.query.wunderground;
  * Enumerates P-VTEC-format Significance (s field)
  */
 public enum Significance {
-	W("Warning"),
+	WARNING("W", "Warning"),
 
-	A("Watch"),
+	WATCH("A", "Watch"),
 
-	Y("Advisory"),
+	ADVISORY("Y", "Advisory"),
 
-	S("Statement"),
+	STATEMENT("S", "Statement"),
 
-	F("Forecast"),
+	FORECAST("F", "Forecast"),
 
-	O("Outlook"),
+	OUTLOOK("O", "Outlook"),
 
-	N("Synopsis");
+	SYNOPSIS("N", "Synopsis");
 
+	private final String vtec;
 	private final String description;
 
-	private Significance(String description) {
+	private Significance(String vtec, String description) {
+		this.vtec = vtec;
 		this.description = description;
+	}
+
+	public String getVtec() {
+		return vtec;
 	}
 
 	public String getDescription() {
 		return description;
+	}
+
+	public static Significance fromVtec(String vtec) {
+		if (vtec == null) {
+			return null;
+		}
+		for (Significance sig : Significance.values()) {
+			if (sig.getVtec().equals(vtec)) {
+				return sig;
+			}
+		}
+		return null;
 	}
 }

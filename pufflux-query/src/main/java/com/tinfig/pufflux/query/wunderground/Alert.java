@@ -6,22 +6,22 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class Alert {
 	@JsonProperty("phenomena")
-	private Phenomena phenomena;
+	private String phenomenaVtec;
 
 	@JsonProperty("significance")
-	private Significance significance;
+	private String significanceVtec;
 
+	@JsonIgnoreProperties(ignoreUnknown = true)
 	public Phenomena getPhenomena() {
-		return phenomena;
+		return Phenomena.fromVtec(phenomenaVtec);
 	}
 
 	public Significance getSignificance() {
-		return significance;
+		return Significance.fromVtec(significanceVtec);
 	}
 
 	@Override
 	public String toString() {
-		return "Alert [phenomena=" + phenomena.getDescription() + ", significance=" + significance.getDescription()
-				+ "]";
+		return "Alert [phenomena=" + getPhenomena() + ", significance=" + getSignificance() + "]";
 	}
 }

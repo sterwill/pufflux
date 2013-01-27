@@ -3,8 +3,6 @@ package com.tinfig.pufflux.query.wunderground;
 import com.tinfig.pufflux.query.transmitter.Animation;
 import com.tinfig.pufflux.query.transmitter.Color;
 
-;
-
 /**
  * Arbitrary categories for types of VTEC phenomena. Defines the animation and
  * colors to use for each.
@@ -39,8 +37,6 @@ public enum PhenomenaCategory {
 	STORM(Animation.PRECIPITATION, Color.DARK_BLUE, Color.LIGHT_BLUE),
 
 	ICE(Animation.PRECIPITATION, Color.BLACK, Color.LIGHT_BLUE),
-
-	SMOKE(Animation.PULSE, Color.BLACK, Color.DARK_GRAY),
 
 	// This one should get some attention
 	TORNADO(Animation.SWIRL, Color.WHITE, Color.RED);

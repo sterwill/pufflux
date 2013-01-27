@@ -26,27 +26,9 @@ public class ResponseHolder {
 		return response;
 	}
 
-	public Alert getHighestWarning() {
+	public Alert findFirst(Significance significance) {
 		for (Alert alert : getAlerts()) {
-			if (alert.getSignificance() == Significance.W) {
-				return alert;
-			}
-		}
-		return null;
-	}
-
-	public Alert getHighestWatch() {
-		for (Alert alert : getAlerts()) {
-			if (alert.getSignificance() == Significance.A) {
-				return alert;
-			}
-		}
-		return null;
-	}
-
-	public Alert getHighestAdvisory() {
-		for (Alert alert : getAlerts()) {
-			if (alert.getSignificance() == Significance.Y) {
+			if (alert.getSignificance() == significance) {
 				return alert;
 			}
 		}

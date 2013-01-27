@@ -66,21 +66,21 @@ public class ForecastTask {
 			return;
 		}
 
-		Alert warning = holder.getHighestWarning();
+		Alert warning = holder.findFirst(Significance.WARNING);
 		if (warning != null) {
 			LOG.info("Found warning-level alert " + warning.toString());
 			write(warning);
 			return;
 		}
 
-		Alert watch = holder.getHighestWatch();
+		Alert watch = holder.findFirst(Significance.WATCH);
 		if (watch != null) {
 			LOG.info("Found watch-level alert " + watch.toString());
 			write(watch);
 			return;
 		}
 
-		Alert advisory = holder.getHighestAdvisory();
+		Alert advisory = holder.findFirst(Significance.ADVISORY);
 		if (advisory != null) {
 			LOG.info("Found advisory-level alert " + advisory.toString());
 			write(advisory);
@@ -94,7 +94,7 @@ public class ForecastTask {
 
 	private void write(Alert alert) {
 		PhenomenaCategory category = alert.getPhenomena().getCategory();
-		boolean warning = alert.getSignificance() == Significance.W;
+		boolean warning = alert.getSignificance() == Significance.WARNING;
 		short command = new CommandBuilder().animate(category.getAnimation()).baseColor(category.getBaseColor())
 				.highlightColor(category.getHighlightColor()).speed(warning).build();
 		write(command);

@@ -5,128 +5,134 @@ package com.tinfig.pufflux.query.wunderground;
  * "phenomenon", but Wunderground and VTEC use the plural.
  */
 public enum Phenomena {
-	AF("Ashfall", PhenomenaCategory.SMOKE),
+	ASHFALL("AF", "Ashfall", PhenomenaCategory.AIR_QUALITY),
 
-	AS("Air Stagnation", PhenomenaCategory.AIR_QUALITY),
+	AIR_STAGNATION("AS", "Air Stagnation", PhenomenaCategory.AIR_QUALITY),
 
-	BS("Blowing Snow", PhenomenaCategory.SNOW),
+	BLOWING_SNOW("BS", "Blowing Snow", PhenomenaCategory.SNOW),
 
-	BW("Brisk Wind", PhenomenaCategory.WIND),
+	BRISK_WIND("BW", "Brisk Wind", PhenomenaCategory.WIND),
 
-	BZ("Blizzard", PhenomenaCategory.SNOW),
+	BLIZZARD("BZ", "Blizzard", PhenomenaCategory.SNOW),
 
-	CF("Coastal Flood", PhenomenaCategory.FLOOD),
+	COASTAL_FLOOD("CF", "Coastal Flood", PhenomenaCategory.FLOOD),
 
-	DS("Dust Storm", PhenomenaCategory.DUST),
+	DUST_STORM("DS", "Dust Storm", PhenomenaCategory.DUST),
 
-	DU("Blowing Dust", PhenomenaCategory.DUST),
+	BLOWING_DUST("DU", "Blowing Dust", PhenomenaCategory.DUST),
 
-	EC("Extreme Cold", PhenomenaCategory.COLD),
+	EXTREME_COLD("EC", "Extreme Cold", PhenomenaCategory.COLD),
 
-	EH("Excessive Heat", PhenomenaCategory.HEAT),
+	EXCESSIVE_HEAT("EH", "Excessive Heat", PhenomenaCategory.HEAT),
 
-	EW("Extreme Wind", PhenomenaCategory.WIND),
+	EXTREME_WIND("EW", "Extreme Wind", PhenomenaCategory.WIND),
 
-	FA("Areal Flood", PhenomenaCategory.FLOOD),
+	AREAL_FLOOD("FA", "Areal Flood", PhenomenaCategory.FLOOD),
 
-	FF("Flash Flood", PhenomenaCategory.FLOOD),
+	FLASH_FLOOD("FF", "Flash Flood", PhenomenaCategory.FLOOD),
 
-	FG("Dense Fog", PhenomenaCategory.FOG),
+	DENSE_FOG("FG", "Dense Fog", PhenomenaCategory.FOG),
 
-	FL("Flood", PhenomenaCategory.FLOOD),
+	FLOOD("FL", "Flood", PhenomenaCategory.FLOOD),
 
-	FR("Frost", PhenomenaCategory.FREEZE),
+	FROST("FR", "Frost", PhenomenaCategory.FREEZE),
 
-	FW("Fire Weather", PhenomenaCategory.FIRE),
+	FIRE_WEATHER("FW", "Fire Weather", PhenomenaCategory.FIRE),
 
-	FZ("Freeze", PhenomenaCategory.FREEZE),
+	FREEZE("FZ", "Freeze", PhenomenaCategory.FREEZE),
 
-	GL("Gale", PhenomenaCategory.WIND),
+	GALE("GL", "Gale", PhenomenaCategory.WIND),
 
-	HF("Hurricane Force Wind", PhenomenaCategory.WIND),
+	HURRICANE_FORCE_WIND("HF", "Hurricane Force Wind", PhenomenaCategory.WIND),
 
-	HI("Inland Hurricane", PhenomenaCategory.WIND),
+	INLAND_HURRICANE("HI", "Inland Hurricane", PhenomenaCategory.WIND),
 
-	HS("Heavy Snow", PhenomenaCategory.SNOW),
+	HEAVY_SNOW("HS", "Heavy Snow", PhenomenaCategory.SNOW),
 
-	HT("Heat", PhenomenaCategory.HEAT),
+	HEAT("HT", "Heat", PhenomenaCategory.HEAT),
 
-	HU("Hurricane", PhenomenaCategory.STORM),
+	HURRICANE("HU", "Hurricane", PhenomenaCategory.STORM),
 
-	HW("High Wind", PhenomenaCategory.WIND),
+	HIGH_WIND("HW", "High Wind", PhenomenaCategory.WIND),
 
-	HY("Hydrologic", PhenomenaCategory.FLOOD),
+	HYDROLOGIC("HY", "Hydrologic", PhenomenaCategory.FLOOD),
 
-	HZ("Hard Freeze", PhenomenaCategory.FREEZE),
+	HARD_FREEZE("HZ", "Hard Freeze", PhenomenaCategory.FREEZE),
 
-	IP("Sleet", PhenomenaCategory.ICE),
+	SLEET("IP", "Sleet", PhenomenaCategory.ICE),
 
-	IS("Ice Storm", PhenomenaCategory.ICE),
+	ICE_STORM("IS", "Ice Storm", PhenomenaCategory.ICE),
 
-	LB("Lake Effect Snow and Blowing Snow", PhenomenaCategory.SNOW),
+	LAKE_EFFECT_SNOW_AND_BLOWING_SNOW("LB", "Lake Effect Snow and Blowing Snow", PhenomenaCategory.SNOW),
 
-	LE("Lake Effect Snow", PhenomenaCategory.SNOW),
+	LAKE_EFFECT_SNOW("LE", "Lake Effect Snow", PhenomenaCategory.SNOW),
 
-	LO("Low Water", PhenomenaCategory.LOW_WATER),
+	LOW_WATER("LO", "Low Water", PhenomenaCategory.LOW_WATER),
 
-	LS("Lakeshore Flood", PhenomenaCategory.FLOOD),
+	LAKESHORE_FLOOD("LS", "Lakeshore Flood", PhenomenaCategory.FLOOD),
 
-	LW("Lake Wind", PhenomenaCategory.WIND),
+	LAKE_WIND("LW", "Lake Wind", PhenomenaCategory.WIND),
 
-	MA("Marine", PhenomenaCategory.MARINE),
+	MARINE("MA", "Marine", PhenomenaCategory.MARINE),
 
-	RB("Small Craft for Rough Bar", PhenomenaCategory.MARINE),
+	SMALL_CRAFT_FOR_ROUGH_BAR("RB", "Small Craft for Rough Bar", PhenomenaCategory.MARINE),
 
-	SB("Snow and Blowing Snow", PhenomenaCategory.SNOW),
+	SNOW_AND_BLOWING_SNOW("SB", "Snow and Blowing Snow", PhenomenaCategory.SNOW),
 
-	SC("Small Craft", PhenomenaCategory.MARINE),
+	SMALL_CRAFT("SC", "Small Craft", PhenomenaCategory.MARINE),
 
-	SE("Hazardous Seas", PhenomenaCategory.MARINE),
+	HAZARDOUS_SEAS("SE", "Hazardous Seas", PhenomenaCategory.MARINE),
 
-	SI("Small Craft for Winds", PhenomenaCategory.MARINE),
+	SMALL_CRAFT_FOR_WINDS("SI", "Small Craft for Winds", PhenomenaCategory.MARINE),
 
-	SM("Dense Smoke", PhenomenaCategory.SMOKE),
+	DENSE_SMOKE("SM", "Dense Smoke", PhenomenaCategory.AIR_QUALITY),
 
-	SN("Snow", PhenomenaCategory.SNOW),
+	SNOW("SN", "Snow", PhenomenaCategory.SNOW),
 
-	SR("Storm", PhenomenaCategory.STORM),
+	STORM("SR", "Storm", PhenomenaCategory.STORM),
 
-	SU("High Surf", PhenomenaCategory.MARINE),
+	HIGH_SURF("SU", "High Surf", PhenomenaCategory.MARINE),
 
-	SV("Severe Thunderstorm", PhenomenaCategory.STORM),
+	SEVERE_THUNDERSTORM("SV", "Severe Thunderstorm", PhenomenaCategory.STORM),
 
-	SW("Small Craft for Hazardous Seas", PhenomenaCategory.MARINE),
+	SMALL_CRAFT_FOR_HAZARDOUS_SEAS("SW", "Small Craft for Hazardous Seas", PhenomenaCategory.MARINE),
 
-	TI("Inland Tropical Storm", PhenomenaCategory.STORM),
+	INLAND_TROPICAL_STORM("TI", "Inland Tropical Storm", PhenomenaCategory.STORM),
 
-	TO("Tornado", PhenomenaCategory.TORNADO),
+	TORNADO("TO", "Tornado", PhenomenaCategory.TORNADO),
 
-	TR("Tropical Storm", PhenomenaCategory.STORM),
+	TROPICAL_STORm("TR", "Tropical Storm", PhenomenaCategory.STORM),
 
-	TS("Tsunami", PhenomenaCategory.MARINE),
+	TSUNAMI("TS", "Tsunami", PhenomenaCategory.MARINE),
 
-	TY("Typhoon", PhenomenaCategory.STORM),
+	TYPHOON("TY", "Typhoon", PhenomenaCategory.STORM),
 
-	UP("Ice Accretion", PhenomenaCategory.ICE),
+	ICE_ACCRETION("UP", "Ice Accretion", PhenomenaCategory.ICE),
 
-	WC("Wind Chill", PhenomenaCategory.COLD),
+	WIND_CHILL("WC", "Wind Chill", PhenomenaCategory.COLD),
 
-	WI("Wind", PhenomenaCategory.WIND),
+	WIND("WI", "Wind", PhenomenaCategory.WIND),
 
-	WS("Winter Storm", PhenomenaCategory.STORM),
+	WINTER_STORM("WS", "Winter Storm", PhenomenaCategory.STORM),
 
-	WW("Winter Weather", PhenomenaCategory.ICE),
+	WINTER_WEATHER("WW", "Winter Weather", PhenomenaCategory.ICE),
 
-	ZF("Freezing Fog", PhenomenaCategory.ICE),
+	FREEZING_FOG("ZF", "Freezing Fog", PhenomenaCategory.ICE),
 
-	ZR("Freezing Rain", PhenomenaCategory.ICE);
+	FREEZING_RAIN("ZR", "Freezing Rain", PhenomenaCategory.ICE);
 
+	private final String vtec;
 	private final String description;
 	private final PhenomenaCategory category;
 
-	private Phenomena(String description, PhenomenaCategory category) {
+	private Phenomena(String vtec, String description, PhenomenaCategory category) {
+		this.vtec = vtec;
 		this.description = description;
 		this.category = category;
+	}
+
+	public String getVtec() {
+		return vtec;
 	}
 
 	public String getDescription() {
@@ -135,5 +141,17 @@ public enum Phenomena {
 
 	public PhenomenaCategory getCategory() {
 		return category;
+	}
+
+	public static Phenomena fromVtec(String vtec) {
+		if (vtec == null) {
+			return null;
+		}
+		for (Phenomena phen : Phenomena.values()) {
+			if (phen.getVtec().equals(vtec)) {
+				return phen;
+			}
+		}
+		return null;
 	}
 }

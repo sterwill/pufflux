@@ -57,7 +57,14 @@ public class ForecastTask {
 		URI uri = UriBuilder.fromUri(baseUri).path(WUNDERGROUND_API_PATH).build(wundergroundApiKey, state, city);
 
 		WebResource resource = client.resource(uri);
+		LOG.info(MessageFormat.format("Querying {0}", resource.getURI().toString()));
 		ResponseHolder holder = resource.get(ResponseHolder.class);
+
+		if (holder.getResponse() != null && holder.getResponse().getError() != null) {
+			LOG.error("Error querying weather information: " + holder.getResponse().getError().getType() + "; "
+					+ holder.getResponse().getError().getDescription());
+			return;
+		}
 
 		Alert warning = holder.getHighestWarning();
 		if (warning != null) {
@@ -81,7 +88,7 @@ public class ForecastTask {
 		}
 
 		// No alerts, do default
-		LOG.info("Nothing interesting, sending default animation command");
+		LOG.info("No alerts, sending default animation command");
 		write(new CommandBuilder().animate(Animation.DEFAULT).build());
 	}
 

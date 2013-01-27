@@ -15,8 +15,15 @@ public class ResponseHolder {
 	@JsonProperty("alerts")
 	private List<Alert> alerts = new ArrayList<>();
 
+	@JsonProperty("response")
+	private Response response;
+
 	public List<Alert> getAlerts() {
 		return alerts;
+	}
+
+	public Response getResponse() {
+		return response;
 	}
 
 	public Alert getHighestWarning() {

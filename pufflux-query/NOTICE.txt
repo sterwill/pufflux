@@ -1,0 +1,2 @@
+Pufflux Weather Query Program
+Copyright 2013 Shaw Terwilliger <sterwill@tinfig.com>

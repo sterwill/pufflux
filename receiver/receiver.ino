@@ -162,8 +162,8 @@ void setup() {
 }
 
 void loop() {
-  state.animation = ANIM_SWIRL_ID;
-  state.fast = true;
+  state.animation = ANIM_PRECIPITATION_ID;
+  state.fast = false;
   state.base_color = COLOR_WHITE_ID;
   state.highlight_color = COLOR_RED_ID;
   memset(state.target_colors, 0, sizeof(state.target_colors));
@@ -243,25 +243,24 @@ void animate() {
 
 // A randomly twinkling animation
 void animate_precipitation() {
-  boolean enabled[10];  
-  for (byte i = 0; i < 10; i++) {
-    enabled[i] = (boolean) random(2);
-  }
+  static unsigned long last_time = 0;
+  unsigned long time = millis();
   
-  uint32_t base_color_bgr = RGB2GBR(rgb_values[state.base_color]);
-  uint32_t highlight_color_bgr = RGB2GBR(rgb_values[state.highlight_color]);
+  state.fade_steps = state.fast ? 8 : 16;
 
-  noInterrupts();
-  // For each pin
-  for (byte i = 0; i < 5; i++) {
-    // Send two colors (for near and far LED modules)
-    for (byte j = 0; j < 2; j++) {
-      send(0b00000001 << i, enabled[i + j] ? base_color_bgr : highlight_color_bgr);
-    }    
+  if (time - last_time > (state.fast ? 128 : 256)) {
+    for (byte i = 0; i < 10; i++) {
+      byte r = random(10);
+      byte color_id = COLOR_BLACK_ID;
+      if (r == 0) {
+        color_id = state.base_color;
+      } else if (r == 1) {
+        color_id = state.highlight_color;
+      }
+      set_color(i, color_id);
+    }
+    last_time = time;
   }
-  interrupts();
-
-  delay(state.fast ? 100 : 300);
 }
 
 // Array of [a,b,c,d] becomes [d,a,b,c]
@@ -289,6 +288,7 @@ void animate_flood() {
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
 
+  // LEDs from left to right
   set_color(0, color_ids[flood_queue[0]]);
   set_color(5, color_ids[flood_queue[0]]);
   set_color(1, color_ids[flood_queue[1]]);

@@ -161,7 +161,7 @@ void setup() {
   // Reset all the controllers and turn off the LEDs
   reset_leds();
 
-  // Chosen so the "default" animation starts off nice  
+  // A seed of 68 starts with purple
   randomSeed(68);
 }
 

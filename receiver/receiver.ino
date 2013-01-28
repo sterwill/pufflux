@@ -19,7 +19,7 @@
 #include <avr/pgmspace.h>
 
 // Turns on some serial port output
-//#define DEBUG
+#define DEBUG
 
 /* 
  * Choose the port (pin group) and matching direction control register that 
@@ -86,6 +86,7 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 #define COLOR_DARK_GRAY_ID      8
 #define COLOR_YELLOW_ID         9
 #define COLOR_ORANGE_ID         10
+#define MAX_COLOR_ID            10
 
 const uint32_t rgb_values[11] = {
   0x000000, // COLOR_BLACK_ID
@@ -159,13 +160,17 @@ void setup() {
   
   // Reset all the controllers and turn off the LEDs
   reset_leds();
+
+  // Chosen so the "default" animation starts off nice  
+  randomSeed(68);
 }
 
 void loop() {
-  state.animation = ANIM_PRECIPITATION_ID;
+  // The default animation doesn't care about the other fields
+  state.animation = ANIM_DEFAULT_ID;
   state.fast = false;
-  state.base_color = COLOR_WHITE_ID;
-  state.highlight_color = COLOR_RED_ID;
+  state.base_color = COLOR_RED_ID;
+  state.highlight_color = COLOR_DARK_BLUE_ID;
   memset(state.target_colors, 0, sizeof(state.target_colors));
   memset(state.current_colors, 0, sizeof(state.current_colors));
   memset(state.source_colors, 0, sizeof(state.source_colors));
@@ -184,9 +189,9 @@ void loop() {
     
     /*
      * A very small delay here helps our byte-sized step counters add up to meaningful
-     * times.  A delay of 8 ms makes 255 steps take at least 2048 ms, a good long fade.
+     * times.  A delay of 16 ms makes 255 steps take at least 4096 ms, a good long fade.
      */
-    delay(8);
+    delay(16);
   }
 }
 
@@ -248,7 +253,7 @@ void animate_precipitation() {
   
   state.fade_steps = state.fast ? 8 : 16;
 
-  if (time - last_time > (state.fast ? 128 : 256)) {
+  if (last_time == 0 || time - last_time > (state.fast ? 128 : 256)) {
     for (byte i = 0; i < 10; i++) {
       byte r = random(10);
       byte color_id = COLOR_BLACK_ID;
@@ -261,18 +266,6 @@ void animate_precipitation() {
     }
     last_time = time;
   }
-}
-
-// Array of [a,b,c,d] becomes [d,a,b,c]
-void rotate_right(byte array[], byte size) {
-  if (size < 2) {
-    return;
-  }
-  byte tail = array[size - 1];
-  for (int i = size - 1; i > 0; i--) {
-    array[i] = array[i - 1];
-  }
-  array[0] = tail;
 }
 
 // Colors move in waves from one end to the other
@@ -300,7 +293,7 @@ void animate_flood() {
   set_color(4, color_ids[flood_queue[4]]);
   set_color(9, color_ids[flood_queue[4]]);
   
-  state.fade_steps = state.fast ? 16 : 32;
+  state.fade_steps = state.fast ? 8 : 16;
 
   // Rotate the queue one place if the period has elapsed
   if (time - last_time > (state.fast ? 128 : 256)) {
@@ -314,9 +307,9 @@ void animate_pulse() {
   static boolean flip = false;
   unsigned long time = millis();
   
-  state.fade_steps = state.fast ? 128 : 255;
+  state.fade_steps = state.fast ? 64 : 128;
 
-  if (time - last_time > (state.fast ? 1024 : 2048)) {
+  if (last_time == 0 || time - last_time > (state.fast ? 1024 : 2048)) {
     for (int i = 0; i < 10; i++) {
       if (flip) {
         set_color(i, state.base_color);
@@ -353,7 +346,7 @@ void animate_swirl() {
   set_color(6, color_ids[swirl_queue[8]]);
   set_color(5, color_ids[swirl_queue[9]]);
   
-  state.fade_steps = state.fast ? 16 : 32;
+  state.fade_steps = state.fast ? 8 : 16;
 
   // Rotate the queue one place if the period has elapsed
   if (time - last_time > (state.fast ? 128 : 256)) {
@@ -363,15 +356,37 @@ void animate_swirl() {
 }
 
 void animate_default() {
+  static unsigned long next_time = 0;
+  unsigned long time = millis();
+
+  state.fade_steps = 255;
+  
+  if (next_time == 0 || time > next_time) {
+    const uint32_t new_color = (random(256) << 16) | (random(256) << 8) | (random(256));
+    
+    for (int i = 0; i < 10; i++) {
+      if (random(2) == 0) {
+        set_color_rgb(i, new_color);
+      }
+    }
+
+    next_time = time + random(1000, 10000);
+  }
 }
 
 /*
  * Sets the desired indexed color for the specified LED.
  */
 void set_color(const byte led, const byte color_id) {
-  const uint32_t color = rgb_values[color_id];
-  if (state.target_colors[led] != color) {
-    state.target_colors[led] = color;
+  set_color_rgb(led, rgb_values[color_id]);
+}
+
+/*
+ * Sets the desired RGB color for the specified LED.
+ */
+void set_color_rgb(const byte led, const uint32_t rgb) {
+  if (state.target_colors[led] != rgb) {
+    state.target_colors[led] = rgb;
     // Reset the source so the next color step knows where we started from
     state.source_colors[led] = state.current_colors[led];
   }
@@ -515,3 +530,16 @@ void send(byte pin_mask, uint32_t data) {
     dataMask >>= 1;
   }
 }
+
+// Array of [a,b,c,d] becomes [d,a,b,c]
+void rotate_right(byte array[], byte size) {
+  if (size < 2) {
+    return;
+  }
+  byte tail = array[size - 1];
+  for (int i = size - 1; i > 0; i--) {
+    array[i] = array[i - 1];
+  }
+  array[0] = tail;
+}
+

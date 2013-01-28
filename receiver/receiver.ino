@@ -42,10 +42,10 @@
 /*
  * Where the LEDs are:
  *
- *  -1,2---------4,5-
- *       |  3  |
- *       |  8  |
- *  -6,7---------9,10
+ *  -0,1---------3,4-
+ *       |  2  |
+ *       |  7  |
+ *  -5,6---------8,9-
  *           ^
  *     front |
  */
@@ -142,9 +142,7 @@ struct cloud_state {
   uint32_t target_colors[10];
   uint32_t current_colors[10];
   uint32_t source_colors[10];
-
-  // Timing  
-  unsigned long last_animated;
+  byte fade_steps;
 };
 static struct cloud_state state;
 
@@ -161,13 +159,13 @@ void setup() {
 
 void loop() {
   state.animation = ANIM_SWIRL_ID;
-  state.fast = false;
-  state.base_color = COLOR_YELLOW_ID;
-  state.highlight_color = COLOR_DARK_BLUE_ID;
+  state.fast = true;
+  state.base_color = COLOR_WHITE_ID;
+  state.highlight_color = COLOR_RED_ID;
   memset(state.target_colors, 0, sizeof(state.target_colors));
   memset(state.current_colors, 0, sizeof(state.current_colors));
   memset(state.source_colors, 0, sizeof(state.source_colors));
-  state.last_animated;
+  state.fade_steps = 64;
   
   uint16_t command;
   
@@ -179,6 +177,12 @@ void loop() {
     }
     
     animate();
+    
+    /*
+     * A very small delay here helps our byte-sized step counters add up to meaningful
+     * times.  A delay of 8 ms makes 255 steps take at least 2048 ms, a good long fade.
+     */
+    delay(8);
   }
 }
 
@@ -254,72 +258,24 @@ void animate_precipitation() {
   delay(state.fast ? 100 : 300);
 }
 
+// Array of [a,b,c,d] becomes [d,a,b,c]
+void rotate_right(byte array[], byte size) {
+  if (size < 2) {
+    return;
+  }
+  byte tail = array[size - 1];
+  for (int i = size - 1; i > 0; i--) {
+    array[i] = array[i - 1];
+  }
+  array[0] = tail;
+}
+
 // Colors move in waves from one end to the other
 void animate_flood() {
+  static unsigned long last_time = 0;
   const byte queue_size = 5;
-  static boolean flood_queue[queue_size] = {false, false, false, false, false};
-  uint32_t base_color_bgr = RGB2GBR(rgb_values[state.base_color]);
-  uint32_t highlight_color_bgr = RGB2GBR(rgb_values[state.highlight_color]);
-
-  // See the map at the top of this file.
-  
-  noInterrupts();
-
-  // left side
-  send(0b00001000, flood_queue[3] ? highlight_color_bgr : base_color_bgr);
-  send(0b00001000, flood_queue[4] ? highlight_color_bgr : base_color_bgr);
-  
-  send(0b00000100, flood_queue[3] ? highlight_color_bgr : base_color_bgr);
-  send(0b00000100, flood_queue[4] ? highlight_color_bgr : base_color_bgr);
-
-  // middle
-  send(0b00010000, flood_queue[2] ? highlight_color_bgr : base_color_bgr);
-  send(0b00010000, flood_queue[2] ? highlight_color_bgr : base_color_bgr);
-
-  // right side
-  send(0b00000010, flood_queue[1] ? highlight_color_bgr : base_color_bgr);
-  send(0b00000010, flood_queue[0] ? highlight_color_bgr : base_color_bgr);
-  
-  send(0b00000001, flood_queue[1] ? highlight_color_bgr : base_color_bgr);
-  send(0b00000001, flood_queue[0] ? highlight_color_bgr : base_color_bgr);
- 
-  interrupts();
-
-  // Shift items toward the head of the queue
-  for (int i = 0; i < queue_size - 1; i++) {
-    flood_queue[i] = flood_queue[i + 1];
-  }
-
-  // Compute new tail element
-  flood_queue[queue_size - 1] = random(6) == 0;
-
-  delay(state.fast ? 200 : 500);
-}
-
-void animate_pulse() {
-  static unsigned long last_time = 0;
-  static boolean phase = false;
+  static byte flood_queue[queue_size] = {1, 2, 0, 0, 0};
   unsigned long time = millis();
-  
-  if (time - last_time > 1000) {
-    for (int i = 0; i < 10; i++) {
-      if (phase) {
-        set_color(i, state.base_color);
-      } else {
-        set_color(i, state.highlight_color);        
-      }
-    }
-    phase = !phase;
-    last_time = time;
-  }
-}
-
-// Colors move in a clockwise circle around the model
-void animate_swirl() {
-  static unsigned long last_time = 0;
-  static byte swirl_queue[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
-  unsigned long time = millis();
-  const short period = state.fast ? 60 : 2000;
   
   // Set the colors from the queue
   byte color_ids[3];
@@ -327,26 +283,75 @@ void animate_swirl() {
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
 
-  // See the map at the top of this file.
-  set_color(0, color_ids[swirl_queue[9]]);
-  set_color(1, color_ids[swirl_queue[8]]);
-  set_color(2, color_ids[swirl_queue[7]]);
-  set_color(3, color_ids[swirl_queue[6]]);
-  set_color(4, color_ids[swirl_queue[5]]);
-  set_color(9, color_ids[swirl_queue[4]]);
-  set_color(8, color_ids[swirl_queue[3]]);
-  set_color(7, color_ids[swirl_queue[2]]);
-  set_color(6, color_ids[swirl_queue[1]]);
-  set_color(5, color_ids[swirl_queue[0]]);
+  set_color(0, color_ids[flood_queue[0]]);
+  set_color(5, color_ids[flood_queue[0]]);
+  set_color(1, color_ids[flood_queue[1]]);
+  set_color(6, color_ids[flood_queue[1]]);
+  set_color(2, color_ids[flood_queue[2]]);
+  set_color(7, color_ids[flood_queue[2]]);
+  set_color(3, color_ids[flood_queue[3]]);
+  set_color(8, color_ids[flood_queue[3]]);
+  set_color(4, color_ids[flood_queue[4]]);
+  set_color(9, color_ids[flood_queue[4]]);
   
+  state.fade_steps = state.fast ? 16 : 32;
+
   // Rotate the queue one place if the period has elapsed
-  if (time - last_time > period) {
-    byte head = swirl_queue[0];
-    for (byte i = 0; i < 9; i++) {
-      swirl_queue[i] = swirl_queue[i + 1];
+  if (time - last_time > (state.fast ? 128 : 256)) {
+    rotate_right(flood_queue, queue_size);
+    last_time = time;
+  }
+}
+
+void animate_pulse() {
+  static unsigned long last_time = 0;
+  static boolean flip = false;
+  unsigned long time = millis();
+  
+  state.fade_steps = state.fast ? 128 : 255;
+
+  if (time - last_time > (state.fast ? 1024 : 2048)) {
+    for (int i = 0; i < 10; i++) {
+      if (flip) {
+        set_color(i, state.base_color);
+      } else {
+        set_color(i, state.highlight_color);        
+      }
     }
-    swirl_queue[9] = head;
-    
+    flip = !flip;
+    last_time = time;
+  }
+}
+
+// Colors move in a clockwise circle around the model
+void animate_swirl() {
+  static unsigned long last_time = 0;
+  const byte queue_size = 10;
+  static byte swirl_queue[queue_size] = {1, 1, 2, 0, 0, 0, 0, 0, 0, 0};
+  unsigned long time = millis();
+  
+  // Set the colors from the queue
+  byte color_ids[3];
+  color_ids[0] = COLOR_BLACK_ID;
+  color_ids[1] = state.base_color;
+  color_ids[2] = state.highlight_color;
+
+  set_color(0, color_ids[swirl_queue[0]]);
+  set_color(1, color_ids[swirl_queue[1]]);
+  set_color(2, color_ids[swirl_queue[2]]);
+  set_color(3, color_ids[swirl_queue[3]]);
+  set_color(4, color_ids[swirl_queue[4]]);
+  set_color(9, color_ids[swirl_queue[5]]);
+  set_color(8, color_ids[swirl_queue[6]]);
+  set_color(7, color_ids[swirl_queue[7]]);
+  set_color(6, color_ids[swirl_queue[8]]);
+  set_color(5, color_ids[swirl_queue[9]]);
+  
+  state.fade_steps = state.fast ? 16 : 32;
+
+  // Rotate the queue one place if the period has elapsed
+  if (time - last_time > (state.fast ? 128 : 256)) {
+    rotate_right(swirl_queue, queue_size);
     last_time = time;
   }
 }
@@ -371,8 +376,6 @@ void set_color(const byte led, const byte color_id) {
  * Colors are interpolated linearly by channel.
  */
 void step_colors() {
-  const byte steps = state.fast ? 50 : 100;
-  
   for (int i = 0; i < 10; i++){
     uint32_t target = state.target_colors[i];
     uint32_t current = state.current_colors[i];
@@ -400,14 +403,22 @@ void step_colors() {
 
     byte adjust;
    
-    adjust = min(abs(diff_r), abs(tgt_r - src_r) / steps);
-    cur_r += (diff_r >= 0) ? adjust : -adjust;
+    // If the channel needs an adjustment
+    if (diff_r != 0) {
+      // Adjust by the step size between src and tgt, but always at least 1
+      adjust = max(1, min(abs(diff_r), abs(tgt_r - src_r) / state.fade_steps));
+      cur_r += (diff_r >= 0) ? adjust : -adjust;
+    }
   
-    adjust = min(abs(diff_g), abs(tgt_g - src_g) / steps);
-    cur_g += (diff_g >= 0) ? adjust : -adjust;
-    
-    adjust = min(abs(diff_b), abs(tgt_b - src_b) / steps);
-    cur_b += (diff_b >= 0) ? adjust : -adjust;
+    if (diff_g != 0) {
+      adjust = max(1, min(abs(diff_g), abs(tgt_g - src_g) / state.fade_steps));
+      cur_g += (diff_g >= 0) ? adjust : -adjust;
+    }
+
+    if (diff_b != 0) {    
+      adjust = max(1, min(abs(diff_b), abs(tgt_b - src_b) / state.fade_steps));
+      cur_b += (diff_b >= 0) ? adjust : -adjust;
+    }
 
     state.current_colors[i] = ((uint32_t) cur_r << 16) | ((uint32_t) cur_g << 8) | ((uint32_t) cur_b);
 

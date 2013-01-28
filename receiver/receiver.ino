@@ -18,6 +18,9 @@
 
 #include <avr/pgmspace.h>
 
+// Turns on some serial port output
+//#define DEBUG
+
 /* 
  * Choose the port (pin group) and matching direction control register that 
  * contains the pins which control your 5 LEDs strips.  Choices are PORTB with 
@@ -147,8 +150,9 @@ struct cloud_state {
 static struct cloud_state state;
 
 void setup() {
-  // For debugging
+#ifdef DEBUG
   Serial.begin(115200);
+#endif
     
   // Configure which pins in the port are in vs. out
   CONFIG_DDR();
@@ -187,6 +191,7 @@ void loop() {
 }
 
 void print_state() {
+#ifdef DEBUG
   Serial.println("----------");
   Serial.print("Animation: ");
   Serial.println(state.animation);
@@ -196,6 +201,7 @@ void print_state() {
   Serial.println(state.base_color);
   Serial.print("Highlight color: ");
   Serial.println(state.highlight_color);
+#endif
 }
 
 void decode_command(uint16_t command) {
@@ -509,19 +515,3 @@ void send(byte pin_mask, uint32_t data) {
     dataMask >>= 1;
   }
 }
-
-void linear_fade(byte & channel, short & delta, const byte minVal, const byte maxVal) {
-  // Up-cast to detect overflow / underflow
-  short val = (short) channel + delta;
-  if (val > maxVal) {
-    val = maxVal;
-    delta *= -1;
-  } else if (val < minVal) {
-    val = minVal;
-    delta *= -1;
-  } else {
-    channel += delta;
-  }
-}
-
-

@@ -74,24 +74,28 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
  */
 #define COLOR_BLACK_ID          0
 #define COLOR_WHITE_ID          1
-#define COLOR_LIGHT_BLUE_ID     2
-#define COLOR_DARK_BLUE_ID      3
-#define COLOR_LIGHT_GRAY_ID     4
-#define COLOR_DARK_GRAY_ID      5
-#define COLOR_YELLOW_ID         6
-#define COLOR_ORANGE_ID         7
-#define COLOR_RED_ID            8
+#define COLOR_RED_ID            2
+#define COLOR_GREEN_ID          3
+#define COLOR_BLUE_ID           4
+#define COLOR_LIGHT_BLUE_ID     5
+#define COLOR_DARK_BLUE_ID      6
+#define COLOR_LIGHT_GRAY_ID     7
+#define COLOR_DARK_GRAY_ID      8
+#define COLOR_YELLOW_ID         9
+#define COLOR_ORANGE_ID         10
 
-const uint32_t rgb_values[9] = {
+const uint32_t rgb_values[11] = {
   0x000000, // COLOR_BLACK_ID
   0xffffff, // COLOR_WHITE_ID
+  0xff0000, // COLOR_RED_ID
+  0x00ff00, // COLOR_GREEN_ID
+  0x0000ff, // COLOR_BLUE_ID
   0xb5ddff, // COLOR_LIGHT_BLUE_ID
   0x1688fa, // COLOR_DARK_BLUE_ID
   0xaaaaaa, // COLOR_LIGHT_GRAY_ID
   0x303030, // COLOR_DARK_GRAY_ID
   0xfcec5b, // COLOR_YELLOW_ID
-  0xff8900, // COLOR_ORANGE_ID
-  0xff0000  // COLOR_RED_ID
+  0xff8900  // COLOR_ORANGE_ID
 };
 
 #define COLOR_ID_MASK           0b0000000000000111
@@ -137,6 +141,7 @@ struct cloud_state {
   // LED states
   uint32_t target_colors[10];
   uint32_t current_colors[10];
+  uint32_t source_colors[10];
 
   // Timing  
   unsigned long last_animated;
@@ -161,6 +166,7 @@ void loop() {
   state.highlight_color = COLOR_DARK_BLUE_ID;
   memset(state.target_colors, 0, sizeof(state.target_colors));
   memset(state.current_colors, 0, sizeof(state.current_colors));
+  memset(state.source_colors, 0, sizeof(state.source_colors));
   state.last_animated;
   
   uint16_t command;
@@ -308,12 +314,12 @@ void animate_pulse() {
   }
 }
 
-// Colors move in a circle, down one side, then down the other in the opposite direction
+// Colors move in a clockwise circle around the model
 void animate_swirl() {
   static unsigned long last_time = 0;
-  static byte swirl_queue[10] = {0, 0, 0, 0, 0, 0, 0, 1, 2, 1};
+  static byte swirl_queue[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
   unsigned long time = millis();
-  const short period = state.fast ? 60 : 200;
+  const short period = state.fast ? 60 : 2000;
   
   // Set the colors from the queue
   byte color_ids[3];
@@ -352,42 +358,62 @@ void animate_default() {
  * Sets the desired indexed color for the specified LED.
  */
 void set_color(const byte led, const byte color_id) {
-  state.target_colors[led] = rgb_values[color_id];
+  const uint32_t color = rgb_values[color_id];
+  if (state.target_colors[led] != color) {
+    state.target_colors[led] = color;
+    // Reset the source so the next color step knows where we started from
+    state.source_colors[led] = state.current_colors[led];
+  }
 }
 
 /*
  * Changes the "current" colors to be one step closer to the "target" colors.
- * Colors are interpolated linearly.
+ * Colors are interpolated linearly by channel.
  */
 void step_colors() {
-  const byte delta = state.fast ? 2 : 1;
+  const byte steps = state.fast ? 50 : 100;
+  
   for (int i = 0; i < 10; i++){
-    uint32_t current = state.current_colors[i];
     uint32_t target = state.target_colors[i];
-
+    uint32_t current = state.current_colors[i];
+    uint32_t source = state.source_colors[i];
+    byte tgt_r = (target >> 16) & 0xff;
+    byte tgt_g = (target >> 8) & 0xff;
+    byte tgt_b = (target) & 0xff;
     byte cur_r = (current >> 16) & 0xff;
     byte cur_g = (current >> 8) & 0xff;
     byte cur_b = (current) & 0xff;
-    byte tar_r = (target >> 16) & 0xff;
-    byte tar_g = (target >> 8) & 0xff;
-    byte tar_b = (target) & 0xff;
-    
-    short diff_r = tar_r - cur_r;
-    short diff_g = tar_g - cur_g;
-    short diff_b = tar_b - cur_b;
-    
+    byte src_r = (source >> 16) & 0xff;
+    byte src_g = (source >> 8) & 0xff;
+    byte src_b = (source) & 0xff;
+
+    /*
+     * Each step moves "cur" closer to "tgt" by an amount that's a fraction of
+     * the original difference between "src" and "tgt".  When other functions 
+     * change the "tgt", they must also set the "src" to "cur" so we can calculate
+     * new step sizes.
+     */
+     
+    short diff_r = tgt_r - cur_r;
+    short diff_g = tgt_g - cur_g;
+    short diff_b = tgt_b - cur_b;
+
     byte adjust;
    
-    adjust = min(abs(diff_r), delta);
+    adjust = min(abs(diff_r), abs(tgt_r - src_r) / steps);
     cur_r += (diff_r >= 0) ? adjust : -adjust;
-    
-    adjust = min(abs(diff_g), delta);
+  
+    adjust = min(abs(diff_g), abs(tgt_g - src_g) / steps);
     cur_g += (diff_g >= 0) ? adjust : -adjust;
     
-    adjust = min(abs(diff_b), delta);
+    adjust = min(abs(diff_b), abs(tgt_b - src_b) / steps);
     cur_b += (diff_b >= 0) ? adjust : -adjust;
 
     state.current_colors[i] = ((uint32_t) cur_r << 16) | ((uint32_t) cur_g << 8) | ((uint32_t) cur_b);
+
+    if (current == target) {
+      state.source_colors[i] = target;
+    }
   }
 }
 

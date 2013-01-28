@@ -8,19 +8,23 @@ public enum Color {
 
 	WHITE(1),
 
-	LIGHT_BLUE(2),
+	RED(2),
 
-	DARK_BLUE(3),
+	GREEN(3),
 
-	LIGHT_GRAY(4),
+	BLUE(4),
 
-	DARK_GRAY(5),
+	LIGHT_BLUE(5),
 
-	YELLOW(6),
+	DARK_BLUE(6),
 
-	ORANGE(7),
+	LIGHT_GRAY(7),
 
-	RED(8);
+	DARK_GRAY(8),
+
+	YELLOW(9),
+
+	ORANGE(10);
 
 	private final byte id;
 

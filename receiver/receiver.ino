@@ -17,6 +17,7 @@
  */
 
 #include <avr/pgmspace.h>
+#include <VirtualWire.h>
 
 // Turns on some serial port output
 #define DEBUG
@@ -66,6 +67,12 @@ const byte leds[10] = { 0x31, 0x30, 0x41, 0x10, 0x11, 0x21, 0x20, 0x40, 0x00, 0x
  * must immediately precede their offset-1 partner on the same pin.
  */
 const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
+
+const int rx = 9;
+const int chan0 = 10;
+const int chan1 = 11;
+const int chan2 = 12;
+const int chan3 = 4;
 
 /************************************************************************/
 /* You probably don't need to change anything below here.               */
@@ -163,14 +170,19 @@ void setup() {
 
   // A seed of 68 starts with purple
   randomSeed(68);
+  
+  //vw_set_rx_pin(3);
+  //vw_setup(2);
+  //vw_rx_start();
+  pinMode(3, INPUT);
 }
 
 void loop() {
   // The default animation doesn't care about the other fields
   state.animation = ANIM_DEFAULT_ID;
-  state.fast = false;
+  state.fast = true;
   state.base_color = COLOR_RED_ID;
-  state.highlight_color = COLOR_DARK_BLUE_ID;
+  state.highlight_color = COLOR_ORANGE_ID;
   memset(state.target_colors, 0, sizeof(state.target_colors));
   memset(state.current_colors, 0, sizeof(state.current_colors));
   memset(state.source_colors, 0, sizeof(state.source_colors));
@@ -216,10 +228,63 @@ void decode_command(uint16_t command) {
   state.highlight_color = (command & HIGHLIGHT_COLOR_GET_MASK) >> 12;
 }
 
-bool read_command(uint16_t & command) {
-  //command = 0b0111001000001001;
-  // TODO read from radio
+bool wait_for(int pin, int condition, unsigned long timeout) {
+  timeout = millis() + timeout;
+  while (millis() < timeout) {
+    if (digitalRead(pin) == condition) {
+      return true;
+    }
+  }
   return false;
+}
+
+bool read_command(uint16_t & command) {
+  return false;
+  byte nibbles[4];        
+
+  if (digitalRead(rx)) {
+    for (int i = 0; i < 4; i++) {
+      if (i == 0) {
+        Serial.println("----------");
+        Serial.println("Incoming Command");
+      }
+      // Read the transmitting nibble      
+      nibbles[i] = 
+          ((byte) digitalRead(chan3) << 3)
+        | ((byte) digitalRead(chan2) << 2) 
+        | ((byte) digitalRead(chan1) << 1) 
+        | ((byte) digitalRead(chan0));
+#ifdef DEBUG
+      Serial.print("Nibble ");
+      Serial.print(i);
+      Serial.print(": ");
+      Serial.println(nibbles[i], BIN);
+#endif
+      if (!wait_for(rx, LOW, 1500)) {
+        Serial.print("Time out waiting for end of nibble ");
+        Serial.println(i);
+        return false;
+      }
+      
+      if (i == 3) {
+        break;
+      }
+      
+      if (!wait_for(rx, HIGH, 1500)) {
+        Serial.print("Time out waiting for start of of nibble ");
+        Serial.println(i + 1);
+        return false;
+      }
+    }
+    Serial.println("Command read.");
+    command = 
+        ((uint16_t) nibbles[3] << 12)
+      | ((uint16_t) nibbles[2] << 8)
+      | ((uint16_t) nibbles[1] << 4)
+      | ((uint16_t) nibbles[0]);
+      return true;
+  }
+  return false;  
 }
 
 void animate() {
@@ -251,9 +316,9 @@ void animate_precipitation() {
   static unsigned long last_time = 0;
   unsigned long time = millis();
   
-  state.fade_steps = state.fast ? 8 : 16;
+  state.fade_steps = state.fast ? 10 : 20;
 
-  if (last_time == 0 || time - last_time > (state.fast ? 128 : 256)) {
+  if (last_time == 0 || time - last_time > (state.fast ? 32 : 64)) {
     for (byte i = 0; i < 10; i++) {
       byte r = random(10);
       byte color_id = COLOR_BLACK_ID;

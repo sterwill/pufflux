@@ -2,39 +2,43 @@
  * Pufflux Transmitter
  *
  * Copyright 2013 Shaw Terwilliger <sterwill@tinfig.com>
- * 
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>. 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
  
 #include <VirtualWire.h>
 
-const int led = 13;
-const int tx = 8;
-const int chan0 = 9;
-const int chan1 = 10;
-const int chan2 = 11;
-const int chan3 = 12;
+#define TX_LED   13
+#define TX       8
+#define CHAN_0   9
+#define CHAN_1   10
+#define CHAN_2   11
+#define CHAN_3   12
 
-const short pulse_duration = 1000;
+/*
+ * How long in milliseconds we raise TX to transmit a nibble, and how long
+ * we lower TX between nibbles.
+ */
+#define PULSE_DURATION 500
 
 void setup() {
   Serial.begin(115200);
-  pinMode(led, OUTPUT);
-  pinMode(tx, OUTPUT);
-  pinMode(chan0, OUTPUT);
-  pinMode(chan1, OUTPUT);
-  pinMode(chan2, OUTPUT);
-  pinMode(chan3, OUTPUT);
+  pinMode(TX_LED, OUTPUT);
+  pinMode(TX, OUTPUT);
+  pinMode(CHAN_0, OUTPUT);
+  pinMode(CHAN_1, OUTPUT);
+  pinMode(CHAN_2, OUTPUT);
+  pinMode(CHAN_3, OUTPUT);
 }
 
 /*
@@ -49,28 +53,29 @@ void send_byte(byte b) {
  * Sends the low nibble.
  */
 void send_nibble(byte nibble) {
-  digitalWrite(chan3, (nibble >> 3) & 0x1);
-  digitalWrite(chan2, (nibble >> 2) & 0x1);
-  digitalWrite(chan1, (nibble >> 1) & 0x1);
-  digitalWrite(chan0, (nibble) & 0x1);
-  digitalWrite(led, HIGH);
-  digitalWrite(tx, HIGH);
-  delay(pulse_duration);
-  digitalWrite(tx, LOW);
-  digitalWrite(led, LOW);
-  delay(pulse_duration);
+  digitalWrite(CHAN_3, (nibble >> 3) & 0x1);
+  digitalWrite(CHAN_2, (nibble >> 2) & 0x1);
+  digitalWrite(CHAN_1, (nibble >> 1) & 0x1);
+  digitalWrite(CHAN_0, (nibble) & 0x1);
+  digitalWrite(TX_LED, HIGH);
+  digitalWrite(TX, HIGH);
+  delay(PULSE_DURATION);
+  digitalWrite(TX, LOW);
+  digitalWrite(TX_LED, LOW);
+  delay(PULSE_DURATION);
 }
 
 void loop() {
-  send_byte(170);
-  send_byte(255);
-  delay(10000);
-  return;
-  
   if (Serial.available() >= 2) {
-    Serial.print("Sending... ");
-    send_byte(Serial.read());
-    send_byte(Serial.read());
+    byte first = Serial.read();
+    byte second = Serial.read();
+    Serial.print("Sending [0x");
+    Serial.print(first, HEX);
+    Serial.print(",0x");
+    Serial.print(second, HEX);
+    Serial.println("]...");
+    send_byte(first);
+    send_byte(second);
     Serial.println("done.");
   }
 }

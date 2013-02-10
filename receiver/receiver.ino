@@ -2,18 +2,18 @@
  * Pufflux Receiver
  *
  * Copyright 2013 Shaw Terwilliger <sterwill@tinfig.com>
- * 
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 2 of the License.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>. 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include <avr/pgmspace.h>
@@ -68,11 +68,23 @@ const byte leds[10] = { 0x31, 0x30, 0x41, 0x10, 0x11, 0x21, 0x20, 0x40, 0x00, 0x
  */
 const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 
-const int rx = 9;
-const int chan0 = 10;
-const int chan1 = 11;
-const int chan2 = 12;
-const int chan3 = 4;
+/*
+ * Digital pins used by the radio interface.  rx goes high when there's an 
+ * incoming transmission, and chan0, chan1, chan2, and chan3 are the 
+ * lowest four bits (in that order) of the data nibble.
+ */
+#define RX       9
+#define RX_LED   13 
+#define CHAN_0   10
+#define CHAN_1   11
+#define CHAN_2   12
+#define CHAN_3   4
+
+/*
+ * How long a transmitted pulse is in milliseconds.  rx goes high this long
+ * so we can read a nibble, then rx goes low this long before the next nibble.
+ */
+#define PULSE_DURATION 500
 
 /************************************************************************/
 /* You probably don't need to change anything below here.               */
@@ -164,17 +176,18 @@ void setup() {
     
   // Configure which pins in the port are in vs. out
   CONFIG_DDR();
+
+  pinMode(RX, INPUT);
+  pinMode(CHAN_0, INPUT);
+  pinMode(CHAN_1, INPUT);
+  pinMode(CHAN_2, INPUT);
+  pinMode(CHAN_3, INPUT);
   
   // Reset all the controllers and turn off the LEDs
   reset_leds();
 
   // A seed of 68 starts with purple
   randomSeed(68);
-  
-  //vw_set_rx_pin(3);
-  //vw_setup(2);
-  //vw_rx_start();
-  pinMode(3, INPUT);
 }
 
 void loop() {
@@ -209,14 +222,14 @@ void loop() {
 
 void print_state() {
 #ifdef DEBUG
-  Serial.println("----------");
-  Serial.print("Animation: ");
+  Serial.println("new state:");
+  Serial.print("  animation: ");
   Serial.println(state.animation);
-  Serial.print("Fast: ");
+  Serial.print("  fast: ");
   Serial.println(state.fast);
-  Serial.print("Base color: ");
+  Serial.print("  base color: ");
   Serial.println(state.base_color);
-  Serial.print("Highlight color: ");
+  Serial.print("  highlight color: ");
   Serial.println(state.highlight_color);
 #endif
 }
@@ -239,50 +252,58 @@ bool wait_for(int pin, int condition, unsigned long timeout) {
 }
 
 bool read_command(uint16_t & command) {
-  return false;
   byte nibbles[4];        
 
-  if (digitalRead(rx)) {
+  if (digitalRead(RX)) {
+    digitalWrite(RX_LED, HIGH);
     for (int i = 0; i < 4; i++) {
       if (i == 0) {
-        Serial.println("----------");
-        Serial.println("Incoming Command");
-      }
-      // Read the transmitting nibble      
-      nibbles[i] = 
-          ((byte) digitalRead(chan3) << 3)
-        | ((byte) digitalRead(chan2) << 2) 
-        | ((byte) digitalRead(chan1) << 1) 
-        | ((byte) digitalRead(chan0));
 #ifdef DEBUG
-      Serial.print("Nibble ");
+        Serial.println("incoming command:");
+#endif
+      }
+      // Read the transmitted nibble      
+      nibbles[i] = 
+          ((byte) digitalRead(CHAN_3) << 3)
+        | ((byte) digitalRead(CHAN_2) << 2) 
+        | ((byte) digitalRead(CHAN_1) << 1) 
+        | ((byte) digitalRead(CHAN_0));
+
+#ifdef DEBUG
+      Serial.print("  nibble ");
       Serial.print(i);
       Serial.print(": ");
-      Serial.println(nibbles[i], BIN);
+      Serial.println(nibbles[i], HEX);
 #endif
-      if (!wait_for(rx, LOW, 1500)) {
-        Serial.print("Time out waiting for end of nibble ");
-        Serial.println(i);
-        return false;
-      }
+
+      // Wait for this pulse to be over, and half-way into the silence
+      delay(PULSE_DURATION + (PULSE_DURATION / 2));
       
       if (i == 3) {
         break;
       }
       
-      if (!wait_for(rx, HIGH, 1500)) {
-        Serial.print("Time out waiting for start of of nibble ");
+      // Wait for the next pulse to start
+      if (!wait_for(RX, HIGH, PULSE_DURATION)) {
+#ifdef DEBUG
+        Serial.print("time out waiting for start of of nibble ");
         Serial.println(i + 1);
+#endif
+        digitalWrite(RX_LED, LOW);
         return false;
       }
     }
-    Serial.println("Command read.");
+    digitalWrite(RX_LED, LOW);
+
+#ifdef DEBUG
+    Serial.println("command read successfully");
+#endif
     command = 
         ((uint16_t) nibbles[3] << 12)
       | ((uint16_t) nibbles[2] << 8)
       | ((uint16_t) nibbles[1] << 4)
       | ((uint16_t) nibbles[0]);
-      return true;
+    return true;
   }
   return false;  
 }

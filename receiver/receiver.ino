@@ -298,10 +298,10 @@ bool read_command(uint16_t & command) {
     Serial.println("command read successfully");
 #endif
     command = 
-        ((uint16_t) nibbles[3] << 12)
-      | ((uint16_t) nibbles[2] << 8)
-      | ((uint16_t) nibbles[1] << 4)
-      | ((uint16_t) nibbles[0]);
+        ((uint16_t) nibbles[0] << 12)
+      | ((uint16_t) nibbles[1] << 8)
+      | ((uint16_t) nibbles[2] << 4)
+      | ((uint16_t) nibbles[3]);
     return true;
   }
   return false;  

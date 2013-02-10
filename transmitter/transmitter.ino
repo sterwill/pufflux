@@ -16,8 +16,8 @@
  * limitations under the License.
  */
  
-#include <VirtualWire.h>
-
+// #define DEBUG
+ 
 #define TX_LED   13
 #define TX       8
 #define CHAN_0   9
@@ -69,14 +69,18 @@ void loop() {
   if (Serial.available() >= 2) {
     byte first = Serial.read();
     byte second = Serial.read();
+#ifdef DEBUG    
     Serial.print("Sending [0x");
     Serial.print(first, HEX);
     Serial.print(",0x");
     Serial.print(second, HEX);
     Serial.println("]...");
+#endif    
     send_byte(first);
     send_byte(second);
+#ifdef DEBUG
     Serial.println("done.");
+#endif    
   }
 }
 

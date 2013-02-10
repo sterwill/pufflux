@@ -17,7 +17,6 @@
  */
 
 #include <avr/pgmspace.h>
-#include <VirtualWire.h>
 
 // Turns on some serial port output
 #define DEBUG

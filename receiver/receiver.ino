@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+#include <float.h>
 #include <avr/pgmspace.h>
 
 // Turns on some serial port output
@@ -131,7 +132,10 @@ const uint32_t rgb_values[11] = {
 #define ANIM_PULSE_ID         3
 #define ANIM_SWIRL_ID         4
 
-#define RGB2GBR(c) (((c & 0xff0000) >> 16) | ((c & 0x00ff00) << 8) | ((c & 0x0000ff) << 8)) 
+#define RGB2GBR(c)  (((c & 0xff0000) >> 16) | ((c & 0x00ff00) << 8) | ((c & 0x0000ff) << 8)) 
+
+#define MIN3(X,Y,Z)  (X < Y ? (X < Z ? X : Z) : (Y < Z ? Y : Z))
+#define MAX3(X,Y,Z)  (X > Y ? (X > Z ? X : Z) : (Y > Z ? Y : Z))
 
 #define ANIM_GET_MASK 0b0000000000000111
 #define ANIM_SET_MASK ~ANIM_GET_MASK
@@ -531,6 +535,8 @@ void step_colors() {
     if (current == target) {
       state.source_colors[i] = target;
     }
+    
+    //state.current_colors[i] = hsv_to_rgb(rgb_to_hsv(state.current_colors[i]));
   }
 }
 
@@ -628,70 +634,101 @@ void rotate_right(byte array[], byte size) {
   array[0] = tail;
 }
 
-uint32_t hsv_to_rgb(uint32_t hsv) {
-  byte region, remainder, p, q, t;
-  const byte h = (hsv & 0x0F00) >> 16;
-  const byte s = (hsv & 0x00F0) >> 8;
-  const byte v = (hsv & 0x000F);
+#define RGB(R,G,B)    (((uint32_t) (R) << 16) | ((uint32_t) (G) << 8) | ((uint32_t) (B)))
+#define RGB_F(R,G,B)  RGB(((byte) (255.0 * (R))), ((byte) (255.0 * (G))), ((byte) (255.0 * (B))))
 
-  if (s == 0) {
-    // All channels are v when the color is achromatic
-    return (v << 16) | (v << 8) | (v);
+uint32_t hsv_to_rgb(uint32_t hsv) {
+  float h = ((hsv >> 16) & 0xff) / 255.0;
+  float s = ((hsv >> 8) & 0xff) / 255.0;
+  float v = ((hsv) & 0xff) / 255.0;
+  
+  // Some shade of grey, use the value for all color channels
+  if (s < FLT_EPSILON) {
+    return RGB_F(v, v, v);
   }
 
-  region = h / 43;
-  remainder = (h - (region * 43)) * 6; 
-
-  p = (v * (255 - s)) >> 8;
-  q = (v * (255 - ((s * remainder) >> 8))) >> 8;
-  t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+  int region = floor(h * 6);
+  float remainder = (h * 6) - region;
+  float p = v * (1.0 - s);
+  float q = v * (1.0 - (s * remainder));
+  float t = v * (1.0 - (s * (1.0 - remainder)));
 
   switch (region) {
     case 0:
-      return (v << 16) | (t << 8) | (p);
+      return RGB_F(v, t, p);
     case 1:
-      return (q << 16) | (v << 8) | (p);
+      return RGB_F(q, v, p);
     case 2:
-      return (p << 16) | (v << 8) | (t);
+      return RGB_F(p, v, t);
     case 3:
-      return (p << 16) | (q << 8) | (v);
+      return RGB_F(p, q, v);
     case 4:
-      return (t << 16) | (p << 8) | (v);
+    Serial.println((byte) (t * 255.0), HEX);
+    Serial.println((byte) (p * 255.0), HEX);    
+    Serial.println((byte) (v * 255.0), HEX);
+    return RGB_F(t, p, v);
     default:
-      return (v << 16) | (p << 8) | (q);
+      return RGB_F(v, p, q);
   }
 }
 
+#define HSV(H,S,V)    (((uint32_t) (H) << 16) | ((uint32_t) (S) << 8) | ((uint32_t) (V)))
+// Hue is degrees 0-360, saturation is 0-1, value is 0-1
+#define HSV_F(H,S,V)  HSV(((byte) (255.0 * ((H) / 360.0))), ((byte) (255.0 * (S))), ((byte) (255.0 * (V))))
+
 uint32_t rgb_to_hsv(uint32_t rgb) {
-  byte rgb_min, rgb_max;
-  const byte r = (rgb & 0x0F00) >> 16;
-  const byte g = (rgb & 0x00F0) >> 8;
-  const byte b = (rgb & 0x000F);
-  byte h, s, v;
+  float r = ((rgb >> 16) & 0xff) / 255.0;
+  float g = ((rgb >> 8) & 0xff) / 255.0;
+  float b = ((rgb) & 0xff) / 255.0;
+  float h, s, v;
   
-  rgb_min = r < g ? (r < b ? r : b) : (g < b ? g : b);
-  rgb_max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+  float rgb_min = MIN3(r, g, b);
+  float rgb_max = MAX3(r, g, b);
 
+  // v is the maximum channel
   v = rgb_max;
+
+  // We can exit early for black
   if (v == 0) {
-    h = 0;
-    s = 0;
-    return (h << 16) | (s << 8) | (v);
+    h = 0.0;
+    s = 0.0;
+    return HSV_F(h, s, v);
+  }
+  
+  // Normalize color channels against the value (the max color channel)
+  r /= v;
+  g /= v;
+  b /= v;
+  rgb_min = MIN3(r, g, b);
+  rgb_max = MAX3(r, g, b);
+  
+  // Saturation is the distance between the extreme color channels
+  s = rgb_max - rgb_min;
+
+  // If the saturation is 0, the color is some shade of gray
+  if (s < FLT_EPSILON) {
+    h = 0.0;
+    return HSV_F(h, s, v);
   }
 
-  s = 255 * long(rgb_max - rgb_min) / v;
-  if (s == 0) {
-    h = 0;
-    return (h << 16) | (s << 8) | (v);
-  }
-
+  // Normalize color channels against value and saturation
+  r = (r - rgb_min) / (rgb_max - rgb_min);
+  g = (g - rgb_min) / (rgb_max - rgb_min);
+  b = (b - rgb_min) / (rgb_max - rgb_min);
+  rgb_min = MIN3(r, g, b);
+  rgb_max = MAX3(r, g, b);
+  
+  // Calculate the hue angle closest to which color is the max
   if (rgb_max == r) {
-    h = 0 + 43 * (g - b) / (rgb_max - rgb_min);
+    h = 0.0 + 60.0 * (g - b);
+    if (h < 0.0) {
+       h += 360.0;
+    }
   } else if (rgb_max == g) {
-    h = 85 + 43 * (b - r) / (rgb_max - rgb_min);
+    h = 120.0 + 60.0 * (b - r);
   } else {
-    h = 171 + 43 * (r - g) / (rgb_max - rgb_min);
+    h = 240.0 + 60.0 * (r - g);
   }
 
-  return (h << 16) | (s << 8) | (v);
+  return HSV_F(h, s, v);
 }

@@ -628,3 +628,70 @@ void rotate_right(byte array[], byte size) {
   array[0] = tail;
 }
 
+uint32_t hsv_to_rgb(uint32_t hsv) {
+  byte region, remainder, p, q, t;
+  const byte h = (hsv & 0x0F00) >> 16;
+  const byte s = (hsv & 0x00F0) >> 8;
+  const byte v = (hsv & 0x000F);
+
+  if (s == 0) {
+    // All channels are v when the color is achromatic
+    return (v << 16) | (v << 8) | (v);
+  }
+
+  region = h / 43;
+  remainder = (h - (region * 43)) * 6; 
+
+  p = (v * (255 - s)) >> 8;
+  q = (v * (255 - ((s * remainder) >> 8))) >> 8;
+  t = (v * (255 - ((s * (255 - remainder)) >> 8))) >> 8;
+
+  switch (region) {
+    case 0:
+      return (v << 16) | (t << 8) | (p);
+    case 1:
+      return (q << 16) | (v << 8) | (p);
+    case 2:
+      return (p << 16) | (v << 8) | (t);
+    case 3:
+      return (p << 16) | (q << 8) | (v);
+    case 4:
+      return (t << 16) | (p << 8) | (v);
+    default:
+      return (v << 16) | (p << 8) | (q);
+  }
+}
+
+uint32_t rgb_to_hsv(uint32_t rgb) {
+  byte rgb_min, rgb_max;
+  const byte r = (rgb & 0x0F00) >> 16;
+  const byte g = (rgb & 0x00F0) >> 8;
+  const byte b = (rgb & 0x000F);
+  byte h, s, v;
+  
+  rgb_min = r < g ? (r < b ? r : b) : (g < b ? g : b);
+  rgb_max = r > g ? (r > b ? r : b) : (g > b ? g : b);
+
+  v = rgb_max;
+  if (v == 0) {
+    h = 0;
+    s = 0;
+    return (h << 16) | (s << 8) | (v);
+  }
+
+  s = 255 * long(rgb_max - rgb_min) / v;
+  if (s == 0) {
+    h = 0;
+    return (h << 16) | (s << 8) | (v);
+  }
+
+  if (rgb_max == r) {
+    h = 0 + 43 * (g - b) / (rgb_max - rgb_min);
+  } else if (rgb_max == g) {
+    h = 85 + 43 * (b - r) / (rgb_max - rgb_min);
+  } else {
+    h = 171 + 43 * (r - g) / (rgb_max - rgb_min);
+  }
+
+  return (h << 16) | (s << 8) | (v);
+}

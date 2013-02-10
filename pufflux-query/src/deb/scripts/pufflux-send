@@ -1,0 +1,25 @@
+#!/bin/bash
+#
+# Sends bytes to a serial port connected to a device running Pufflux 
+# Transmitter.
+
+OUT=$1
+
+if [ -z "$1" ] ; then
+  echo "usage: $0 <serialDevice>"
+  exit 1
+fi
+
+if [ ! -c "$1" ] ; then
+  echo "$1 is not a character device; you probably want a serial port like /dev/ttyACM0"
+  exit 2
+fi
+
+# Bind the device to a new descriptor
+exec 3<>"$1"
+
+# Echo standard input
+cat >&3
+
+# Close
+echo -n 3>&-

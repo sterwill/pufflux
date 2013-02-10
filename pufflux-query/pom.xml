@@ -163,6 +163,12 @@
 										<filemode>755</filemode>
 									</mapper>
 								</data>
+								<data>
+									<type>link</type>
+									<linkName>/usr/bin/pufflux-query</linkName>
+									<linkTarget>/var/lib/pufflux-query/bin/pufflux-query</linkTarget>
+									<symlink>true</symlink>
+								</data>
 							</dataSet>
 						</configuration>
 					</execution>

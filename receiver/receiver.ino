@@ -20,7 +20,7 @@
 #include <avr/pgmspace.h>
 
 // Turns on some serial port output
-#define DEBUG
+//#define DEBUG
 
 /* 
  * Choose the port (pin group) and matching direction control register that 
@@ -91,7 +91,7 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 /************************************************************************/
 
 /*
- * You can change the RGB values of these colors, but don't change the
+ * You can change the HSV values of these colors, but don't change the
  * count or IDs without changing the transmitter software to match.
  */
 #define COLOR_BLACK_ID          0
@@ -107,19 +107,13 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 #define COLOR_ORANGE_ID         10
 #define MAX_COLOR_ID            10
 
-const uint32_t rgb_values[11] = {
-  0x000000, // COLOR_BLACK_ID
-  0xffffff, // COLOR_WHITE_ID
-  0xff0000, // COLOR_RED_ID
-  0x00ff00, // COLOR_GREEN_ID
-  0x0000ff, // COLOR_BLUE_ID
-  0xb5ddff, // COLOR_LIGHT_BLUE_ID
-  0x1688fa, // COLOR_DARK_BLUE_ID
-  0xaaaaaa, // COLOR_LIGHT_GRAY_ID
-  0x303030, // COLOR_DARK_GRAY_ID
-  0xfcec5b, // COLOR_YELLOW_ID
-  0xff8900  // COLOR_ORANGE_ID
-};
+static uint32_t hsv_values[11];
+
+/*
+ * Reserve one hue value to mean "don't interpolate hue values to this one if
+ * it's the target."
+ */
+#define NULL_HUE 0xff
 
 #define COLOR_ID_MASK           0b0000000000000111
 
@@ -164,7 +158,7 @@ struct cloud_state {
   uint32_t base_color;
   uint32_t highlight_color;
 
-  // LED states
+  // LED states, HSV color space
   uint32_t target_colors[10];
   uint32_t current_colors[10];
   uint32_t source_colors[10];
@@ -177,6 +171,18 @@ void setup() {
   Serial.begin(115200);
 #endif
     
+  hsv_values[COLOR_BLACK_ID] = rgb_to_hsv(0x000000);
+  hsv_values[COLOR_WHITE_ID] = rgb_to_hsv(0xffffff);
+  hsv_values[COLOR_RED_ID] = rgb_to_hsv(0xff0000);
+  hsv_values[COLOR_GREEN_ID] = rgb_to_hsv(0x00ff00);
+  hsv_values[COLOR_BLUE_ID] = rgb_to_hsv(0x0000ff);
+  hsv_values[COLOR_LIGHT_BLUE_ID] = rgb_to_hsv(0xb5ddff);
+  hsv_values[COLOR_DARK_BLUE_ID] = rgb_to_hsv(0x1688fa);
+  hsv_values[COLOR_LIGHT_GRAY_ID] = rgb_to_hsv(0xaaaaaa);
+  hsv_values[COLOR_DARK_GRAY_ID] = rgb_to_hsv(0x303030);
+  hsv_values[COLOR_YELLOW_ID] = rgb_to_hsv(0xfcec5b);
+  hsv_values[COLOR_ORANGE_ID] = rgb_to_hsv(0xff8900);
+
   // Configure which pins in the port are in vs. out
   CONFIG_DDR();
 
@@ -189,38 +195,38 @@ void setup() {
   // Reset all the controllers and turn off the LEDs
   reset_leds();
 
-  // A seed of 68 starts with purple
-  randomSeed(68);
+  randomSeed(2);
+  
+  for (int i = 0; i < 10; i++) {
+   state.target_colors[i] = hsv_values[COLOR_BLACK_ID];
+   state.current_colors[i] = hsv_values[COLOR_BLACK_ID];
+   state.source_colors[i] = hsv_values[COLOR_BLACK_ID];
+  }
+  state.fade_steps = 64;
+
+  // The default animation doesn't care about the other fields
+  state.animation = ANIM_DEFAULT_ID;
+  state.fast = false;
+  state.base_color = COLOR_RED_ID;
+  state.highlight_color = COLOR_ORANGE_ID;
+  
+  print_state();
 }
 
 void loop() {
-  // The default animation doesn't care about the other fields
-  state.animation = ANIM_DEFAULT_ID;
-  state.fast = true;
-  state.base_color = COLOR_RED_ID;
-  state.highlight_color = COLOR_ORANGE_ID;
-  memset(state.target_colors, 0, sizeof(state.target_colors));
-  memset(state.current_colors, 0, sizeof(state.current_colors));
-  memset(state.source_colors, 0, sizeof(state.source_colors));
-  state.fade_steps = 64;
-  
   uint16_t command;
-  
-  print_state();
-  while (true) {
-    if (read_command(command)) {
-      decode_command(command);
-      print_state();
-    }
-    
-    animate();
-    
-    /*
-     * A very small delay here helps our byte-sized step counters add up to meaningful
-     * times.  A delay of 16 ms makes 255 steps take at least 4096 ms, a good long fade.
-     */
-    delay(16);
+  if (read_command(command)) {
+    decode_command(command);
+    print_state();
   }
+    
+  animate();
+    
+  /*
+   * A very small delay here helps our byte-sized step counters add up to meaningful
+   * times.  A delay of 16 ms makes 255 steps take at least 4096 ms, a good long fade.
+   */
+  delay(16);
 }
 
 void print_state() {
@@ -396,7 +402,7 @@ void animate_pulse() {
   static boolean flip = false;
   unsigned long time = millis();
   
-  state.fade_steps = state.fast ? 64 : 128;
+  state.fade_steps = state.fast ? 16 : 128;
 
   if (last_time == 0 || time - last_time > (state.fast ? 1024 : 2048)) {
     for (int i = 0; i < 10; i++) {
@@ -451,11 +457,14 @@ void animate_default() {
   state.fade_steps = 255;
   
   if (next_time == 0 || time > next_time) {
-    const uint32_t new_color = (random(256) << 16) | (random(256) << 8) | (random(256));
+    // Avoid the NULL_HUE by only going to 255, because we want lots of hue
+    // shifts in this animation.  Bias the saturation high for bright colors,
+    // and bias the value up a bit.
+    const uint32_t new_color = (random(255) << 16) | ((128 + random(128)) << 8) | ((64 + random(192)));
     
     for (int i = 0; i < 10; i++) {
       if (random(2) == 0) {
-        set_color_rgb(i, new_color);
+        set_color_hsv(i, new_color);
       }
     }
 
@@ -467,15 +476,15 @@ void animate_default() {
  * Sets the desired indexed color for the specified LED.
  */
 void set_color(const byte led, const byte color_id) {
-  set_color_rgb(led, rgb_values[color_id]);
+  set_color_hsv(led, hsv_values[color_id]);
 }
 
 /*
- * Sets the desired RGB color for the specified LED.
+ * Sets the desired HSV color for the specified LED.
  */
-void set_color_rgb(const byte led, const uint32_t rgb) {
-  if (state.target_colors[led] != rgb) {
-    state.target_colors[led] = rgb;
+void set_color_hsv(const byte led, const uint32_t hsv) {
+  if (state.target_colors[led] != hsv) {
+    state.target_colors[led] = hsv;
     // Reset the source so the next color step knows where we started from
     state.source_colors[led] = state.current_colors[led];
   }
@@ -486,19 +495,20 @@ void set_color_rgb(const byte led, const uint32_t rgb) {
  * Colors are interpolated linearly by channel.
  */
 void step_colors() {
-  for (int i = 0; i < 10; i++){
+  // For each LED
+  for (int i = 0; i < 10; i++) {
     uint32_t target = state.target_colors[i];
     uint32_t current = state.current_colors[i];
     uint32_t source = state.source_colors[i];
-    byte tgt_r = (target >> 16) & 0xff;
-    byte tgt_g = (target >> 8) & 0xff;
-    byte tgt_b = (target) & 0xff;
-    byte cur_r = (current >> 16) & 0xff;
-    byte cur_g = (current >> 8) & 0xff;
-    byte cur_b = (current) & 0xff;
-    byte src_r = (source >> 16) & 0xff;
-    byte src_g = (source >> 8) & 0xff;
-    byte src_b = (source) & 0xff;
+    byte tgt_h = (target >> 16) & 0xff;
+    byte tgt_s = (target >> 8) & 0xff;
+    byte tgt_v = (target) & 0xff;
+    byte cur_h = (current >> 16) & 0xff;
+    byte cur_s = (current >> 8) & 0xff;
+    byte cur_v = (current) & 0xff;
+    byte src_h = (source >> 16) & 0xff;
+    byte src_s = (source >> 8) & 0xff;
+    byte src_v = (source) & 0xff;
 
     /*
      * Each step moves "cur" closer to "tgt" by an amount that's a fraction of
@@ -506,37 +516,57 @@ void step_colors() {
      * change the "tgt", they must also set the "src" to "cur" so we can calculate
      * new step sizes.
      */
-     
-    short diff_r = tgt_r - cur_r;
-    short diff_g = tgt_g - cur_g;
-    short diff_b = tgt_b - cur_b;
+
+    // Hue is an angle (0-255 corresponds to 0-360 degrees), and we need to wrap
+    // around to find the best color transitions, so calculate diffs with larger 
+    // signed values.
+    short diff_h = tgt_h - cur_h;
+    short diff_s = tgt_s - cur_s;
+    short diff_v = tgt_v - cur_v;
 
     byte adjust;
-   
-    // If the channel needs an adjustment
-    if (diff_r != 0) {
-      // Adjust by the step size between src and tgt, but always at least 1
-      adjust = max(1, min(abs(diff_r), abs(tgt_r - src_r) / state.fade_steps));
-      cur_r += (diff_r >= 0) ? adjust : -adjust;
+
+#ifdef DEBUG
+    Serial.print(source, HEX);
+    Serial.print(" ");
+    Serial.print(current, HEX);
+    Serial.print(" ");
+    Serial.print(target, HEX);
+    Serial.println();
+#endif
+
+    // Don't interpolate to the target if it's the NULL_HUE
+    if (diff_h != 0 && tgt_h != NULL_HUE) {
+      /*
+       * Because hue wraps around, choose the shortest path. step preserves the sign
+       * of the difference.
+       */
+      short step = ((short) tgt_h - src_h) / state.fade_steps;
+      if (diff_h < 0) {
+        adjust = min(-1, max(diff_h, step));
+      } else {
+        adjust = max(1, min(diff_h, step));
+      }
+      cur_h += adjust;
     }
   
-    if (diff_g != 0) {
-      adjust = max(1, min(abs(diff_g), abs(tgt_g - src_g) / state.fade_steps));
-      cur_g += (diff_g >= 0) ? adjust : -adjust;
+    // Avoid rollover for saturation and value
+    if (diff_s != 0) {
+      // Adjust by the step size between src and tgt, but always at least 1
+      adjust = max(1, min(abs(diff_s), abs(tgt_s - src_s) / state.fade_steps));
+      cur_s += (diff_s > 0) ? adjust : -adjust;
     }
 
-    if (diff_b != 0) {    
-      adjust = max(1, min(abs(diff_b), abs(tgt_b - src_b) / state.fade_steps));
-      cur_b += (diff_b >= 0) ? adjust : -adjust;
+    if (diff_v != 0) {    
+      adjust = max(1, min(abs(diff_v), abs(tgt_v - src_v) / state.fade_steps));
+      cur_v += (diff_v > 0) ? adjust : -adjust;
     }
-
-    state.current_colors[i] = ((uint32_t) cur_r << 16) | ((uint32_t) cur_g << 8) | ((uint32_t) cur_b);
+ 
+    state.current_colors[i] = ((uint32_t) cur_h << 16) | ((uint32_t) cur_s << 8) | ((uint32_t) cur_v);
 
     if (current == target) {
       state.source_colors[i] = target;
     }
-    
-    //state.current_colors[i] = hsv_to_rgb(rgb_to_hsv(state.current_colors[i]));
   }
 }
 
@@ -544,6 +574,14 @@ void step_colors() {
  * Updates the colors of all the LEDs to their "current" colors.
  */
 void update_leds() {
+  static uint32_t bgr[10];
+  
+  // hsv_to_rgb is too slow to run in the noInterrupts section
+  for (int i = 0; i < 10; i++) {
+    uint32_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
+    bgr[i] = RGB2GBR(rgb);
+  }
+  
   noInterrupts();
   for (int i = 0; i < 10; i++) {
     // Get the led index from the order array
@@ -554,7 +592,7 @@ void update_leds() {
     byte pin_mask = 0x1 << ((led_address & 0b11110000) >> 4);
     byte offset = (led_address & 0b00001111);
 
-    send(pin_mask, RGB2GBR(state.current_colors[led]));
+    send(pin_mask, bgr[i]);
   }
   interrupts();
 }
@@ -663,10 +701,7 @@ uint32_t hsv_to_rgb(uint32_t hsv) {
     case 3:
       return RGB_F(p, q, v);
     case 4:
-    Serial.println((byte) (t * 255.0), HEX);
-    Serial.println((byte) (p * 255.0), HEX);    
-    Serial.println((byte) (v * 255.0), HEX);
-    return RGB_F(t, p, v);
+      return RGB_F(t, p, v);
     default:
       return RGB_F(v, p, q);
   }

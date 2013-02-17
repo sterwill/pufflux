@@ -20,7 +20,7 @@
 #include <avr/pgmspace.h>
 
 // Turns on some serial port output
-//#define DEBUG
+#define DEBUG
 
 /* 
  * Choose the port (pin group) and matching direction control register that 
@@ -107,7 +107,20 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 #define COLOR_ORANGE_ID         10
 #define MAX_COLOR_ID            10
 
-static uint32_t hsv_values[11];
+// Hue is degrees 0-360, saturation is 0-1, value is 0-1
+struct hsv_t {
+  float h;
+  float s;
+  float v;
+};
+
+struct rgb_t {
+  byte r;
+  byte g;
+  byte b;
+};
+  
+static struct hsv_t hsv_values[11];
 
 /*
  * Reserve one hue value to mean "don't interpolate hue values to this one if
@@ -125,8 +138,6 @@ static uint32_t hsv_values[11];
 #define ANIM_FLOOD_ID         2
 #define ANIM_PULSE_ID         3
 #define ANIM_SWIRL_ID         4
-
-#define RGB2GBR(c)  (((c & 0xff0000) >> 16) | ((c & 0x00ff00) << 8) | ((c & 0x0000ff) << 8)) 
 
 #define MIN3(X,Y,Z)  (X < Y ? (X < Z ? X : Z) : (Y < Z ? Y : Z))
 #define MAX3(X,Y,Z)  (X > Y ? (X > Z ? X : Z) : (Y > Z ? Y : Z))
@@ -159,10 +170,10 @@ struct cloud_state {
   uint32_t highlight_color;
 
   // LED states, HSV color space
-  uint32_t target_colors[10];
-  uint32_t current_colors[10];
-  uint32_t source_colors[10];
-  byte fade_steps;
+  struct hsv_t target_colors[10];
+  struct hsv_t current_colors[10];
+  struct hsv_t source_colors[10];
+  int fade_steps;
 };
 static struct cloud_state state;
 
@@ -170,18 +181,18 @@ void setup() {
 #ifdef DEBUG
   Serial.begin(115200);
 #endif
-    
-  hsv_values[COLOR_BLACK_ID] = rgb_to_hsv(0x000000);
-  hsv_values[COLOR_WHITE_ID] = rgb_to_hsv(0xffffff);
-  hsv_values[COLOR_RED_ID] = rgb_to_hsv(0xff0000);
-  hsv_values[COLOR_GREEN_ID] = rgb_to_hsv(0x00ff00);
-  hsv_values[COLOR_BLUE_ID] = rgb_to_hsv(0x0000ff);
-  hsv_values[COLOR_LIGHT_BLUE_ID] = rgb_to_hsv(0xb5ddff);
-  hsv_values[COLOR_DARK_BLUE_ID] = rgb_to_hsv(0x1688fa);
-  hsv_values[COLOR_LIGHT_GRAY_ID] = rgb_to_hsv(0xaaaaaa);
-  hsv_values[COLOR_DARK_GRAY_ID] = rgb_to_hsv(0x303030);
-  hsv_values[COLOR_YELLOW_ID] = rgb_to_hsv(0xfcec5b);
-  hsv_values[COLOR_ORANGE_ID] = rgb_to_hsv(0xff8900);
+
+  hsv_values[COLOR_BLACK_ID] = rgb_to_hsv((struct rgb_t)         { 0x00, 0x00, 0x00 });
+  hsv_values[COLOR_WHITE_ID] = rgb_to_hsv((struct rgb_t)         { 0xff, 0xff, 0xff });
+  hsv_values[COLOR_RED_ID] = rgb_to_hsv((struct rgb_t)           { 0xff, 0x00, 0x00 });
+  hsv_values[COLOR_GREEN_ID] = rgb_to_hsv((struct rgb_t)         { 0x00, 0xff, 0x00 });
+  hsv_values[COLOR_BLUE_ID] = rgb_to_hsv((struct rgb_t)          { 0x00, 0x00, 0xff });
+  hsv_values[COLOR_LIGHT_BLUE_ID] = rgb_to_hsv((struct rgb_t)    { 0xb5, 0xdd, 0xff });
+  hsv_values[COLOR_DARK_BLUE_ID] = rgb_to_hsv((struct rgb_t)     { 0x16, 0x88, 0xfa });
+  hsv_values[COLOR_LIGHT_GRAY_ID] = rgb_to_hsv((struct rgb_t)    { 0xaa, 0xaa, 0xaa });
+  hsv_values[COLOR_DARK_GRAY_ID] = rgb_to_hsv((struct rgb_t)     { 0x30, 0x30, 0x30 });
+  hsv_values[COLOR_YELLOW_ID] = rgb_to_hsv((struct rgb_t)        { 0xfc, 0xec, 0x5b });
+  hsv_values[COLOR_ORANGE_ID] = rgb_to_hsv((struct rgb_t)        { 0xff, 0x89, 0x00 });
 
   // Configure which pins in the port are in vs. out
   CONFIG_DDR();
@@ -205,10 +216,10 @@ void setup() {
   state.fade_steps = 64;
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_DEFAULT_ID;
+  state.animation = ANIM_PULSE_ID;
   state.fast = false;
-  state.base_color = COLOR_RED_ID;
-  state.highlight_color = COLOR_ORANGE_ID;
+  state.base_color = COLOR_GREEN_ID;
+  state.highlight_color = COLOR_BLUE_ID;
   
   print_state();
 }
@@ -226,7 +237,7 @@ void loop() {
    * A very small delay here helps our byte-sized step counters add up to meaningful
    * times.  A delay of 16 ms makes 255 steps take at least 4096 ms, a good long fade.
    */
-  delay(16);
+  //delay(16);
 }
 
 void print_state() {
@@ -240,6 +251,28 @@ void print_state() {
   Serial.println(state.base_color);
   Serial.print("  highlight color: ");
   Serial.println(state.highlight_color);
+#endif
+}
+
+void print_rgb(struct rgb_t rgb) {
+#ifdef DEBUG
+  Serial.print(rgb.r, HEX);
+  Serial.print(",");
+  Serial.print(rgb.g, HEX);
+  Serial.print(",");
+  Serial.print(rgb.b, HEX);
+  Serial.print(" ");
+#endif
+}
+
+void print_hsv(struct hsv_t hsv) {
+#ifdef DEBUG
+  Serial.print(hsv.h);
+  Serial.print(",");
+  Serial.print(hsv.s);
+  Serial.print(",");
+  Serial.print(hsv.v);
+  Serial.print(" ");
 #endif
 }
 
@@ -402,9 +435,9 @@ void animate_pulse() {
   static boolean flip = false;
   unsigned long time = millis();
   
-  state.fade_steps = state.fast ? 16 : 128;
+  state.fade_steps = state.fast ? 128 : 2048;
 
-  if (last_time == 0 || time - last_time > (state.fast ? 1024 : 2048)) {
+  if (last_time == 0 || time - last_time > (state.fast ? 1024 : 4096)) {
     for (int i = 0; i < 10; i++) {
       if (flip) {
         set_color(i, state.base_color);
@@ -421,7 +454,7 @@ void animate_pulse() {
 void animate_swirl() {
   static unsigned long last_time = 0;
   const byte queue_size = 10;
-  static byte swirl_queue[queue_size] = {1, 1, 2, 0, 0, 0, 0, 0, 0, 0};
+  static byte swirl_queue[queue_size] = {1, 1, 1, 0, 0, 0, 0, 0, 0, 0};
   unsigned long time = millis();
   
   // Set the colors from the queue
@@ -441,7 +474,7 @@ void animate_swirl() {
   set_color(6, color_ids[swirl_queue[8]]);
   set_color(5, color_ids[swirl_queue[9]]);
   
-  state.fade_steps = state.fast ? 8 : 16;
+  state.fade_steps = state.fast ? 2 : 4;
 
   // Rotate the queue one place if the period has elapsed
   if (time - last_time > (state.fast ? 128 : 256)) {
@@ -460,7 +493,10 @@ void animate_default() {
     // Avoid the NULL_HUE by only going to 255, because we want lots of hue
     // shifts in this animation.  Bias the saturation high for bright colors,
     // and bias the value up a bit.
-    const uint32_t new_color = (random(255) << 16) | ((128 + random(128)) << 8) | ((64 + random(192)));
+    struct hsv_t new_color;
+    new_color.h = random(255);
+    new_color.s = 128 + random(128);
+    new_color.v = 64 + random(192);
     
     for (int i = 0; i < 10; i++) {
       if (random(2) == 0) {
@@ -482,8 +518,8 @@ void set_color(const byte led, const byte color_id) {
 /*
  * Sets the desired HSV color for the specified LED.
  */
-void set_color_hsv(const byte led, const uint32_t hsv) {
-  if (state.target_colors[led] != hsv) {
+void set_color_hsv(const byte led, const struct hsv_t hsv) {
+  if (state.target_colors[led].h != hsv.h || state.target_colors[led].s != hsv.s || state.target_colors[led].v != hsv.v) {
     state.target_colors[led] = hsv;
     // Reset the source so the next color step knows where we started from
     state.source_colors[led] = state.current_colors[led];
@@ -497,18 +533,9 @@ void set_color_hsv(const byte led, const uint32_t hsv) {
 void step_colors() {
   // For each LED
   for (int i = 0; i < 10; i++) {
-    uint32_t target = state.target_colors[i];
-    uint32_t current = state.current_colors[i];
-    uint32_t source = state.source_colors[i];
-    byte tgt_h = (target >> 16) & 0xff;
-    byte tgt_s = (target >> 8) & 0xff;
-    byte tgt_v = (target) & 0xff;
-    byte cur_h = (current >> 16) & 0xff;
-    byte cur_s = (current >> 8) & 0xff;
-    byte cur_v = (current) & 0xff;
-    byte src_h = (source >> 16) & 0xff;
-    byte src_s = (source >> 8) & 0xff;
-    byte src_v = (source) & 0xff;
+    struct hsv_t tgt = state.target_colors[i];
+    struct hsv_t cur = state.current_colors[i];
+    struct hsv_t src = state.source_colors[i];
 
     /*
      * Each step moves "cur" closer to "tgt" by an amount that's a fraction of
@@ -517,55 +544,40 @@ void step_colors() {
      * new step sizes.
      */
 
-    // Hue is an angle (0-255 corresponds to 0-360 degrees), and we need to wrap
-    // around to find the best color transitions, so calculate diffs with larger 
-    // signed values.
-    short diff_h = tgt_h - cur_h;
-    short diff_s = tgt_s - cur_s;
-    short diff_v = tgt_v - cur_v;
+    float diff_h = tgt.h - cur.h;
+    float diff_s = tgt.s - cur.s;
+    float diff_v = tgt.v - cur.v;
 
-    byte adjust;
+    float adjust;
 
-#ifdef DEBUG
-    Serial.print(source, HEX);
-    Serial.print(" ");
-    Serial.print(current, HEX);
-    Serial.print(" ");
-    Serial.print(target, HEX);
-    Serial.println();
-#endif
-
-    // Don't interpolate to the target if it's the NULL_HUE
-    if (diff_h != 0 && tgt_h != NULL_HUE) {
+    if (abs(diff_h) > FLT_EPSILON) {
       /*
        * Because hue wraps around, choose the shortest path. step preserves the sign
        * of the difference.
        */
-      short step = ((short) tgt_h - src_h) / state.fade_steps;
+      float step = (tgt.h - src.h) / state.fade_steps;
       if (diff_h < 0) {
         adjust = min(-1, max(diff_h, step));
       } else {
         adjust = max(1, min(diff_h, step));
       }
-      cur_h += adjust;
+      cur.h += adjust;
     }
   
-    // Avoid rollover for saturation and value
     if (diff_s != 0) {
-      // Adjust by the step size between src and tgt, but always at least 1
-      adjust = max(1, min(abs(diff_s), abs(tgt_s - src_s) / state.fade_steps));
-      cur_s += (diff_s > 0) ? adjust : -adjust;
+      adjust = min(abs(diff_s), abs(tgt.s - src.s) / state.fade_steps);
+      cur.s += (diff_s > 0) ? adjust : -adjust;
     }
 
     if (diff_v != 0) {    
-      adjust = max(1, min(abs(diff_v), abs(tgt_v - src_v) / state.fade_steps));
-      cur_v += (diff_v > 0) ? adjust : -adjust;
+      adjust = min(abs(diff_v), abs(tgt.v - src.v) / state.fade_steps);
+      cur.v += (diff_v > 0) ? adjust : -adjust;
     }
- 
-    state.current_colors[i] = ((uint32_t) cur_h << 16) | ((uint32_t) cur_s << 8) | ((uint32_t) cur_v);
 
-    if (current == target) {
-      state.source_colors[i] = target;
+    state.current_colors[i] = cur;
+
+    if (cur.h == tgt.h && cur.s == tgt.s && cur.v == tgt.v) {
+      state.source_colors[i] = tgt;
     }
   }
 }
@@ -574,12 +586,13 @@ void step_colors() {
  * Updates the colors of all the LEDs to their "current" colors.
  */
 void update_leds() {
-  static uint32_t bgr[10];
+  // The hardware needs GBR, not RGB
+  uint32_t gbr[10];
   
   // hsv_to_rgb is too slow to run in the noInterrupts section
   for (int i = 0; i < 10; i++) {
-    uint32_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
-    bgr[i] = RGB2GBR(rgb);
+    struct rgb_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
+    gbr[i] = ((uint32_t) rgb.g << 16) | ((uint32_t) rgb.b << 8) | ((uint32_t) rgb.r);
   }
   
   noInterrupts();
@@ -592,7 +605,7 @@ void update_leds() {
     byte pin_mask = 0x1 << ((led_address & 0b11110000) >> 4);
     byte offset = (led_address & 0b00001111);
 
-    send(pin_mask, bgr[i]);
+    send(pin_mask, gbr[i]);
   }
   interrupts();
 }
@@ -672,78 +685,99 @@ void rotate_right(byte array[], byte size) {
   array[0] = tail;
 }
 
-#define RGB(R,G,B)    (((uint32_t) (R) << 16) | ((uint32_t) (G) << 8) | ((uint32_t) (B)))
-#define RGB_F(R,G,B)  RGB(((byte) (255.0 * (R))), ((byte) (255.0 * (G))), ((byte) (255.0 * (B))))
+struct rgb_t hsv_to_rgb(struct hsv_t hsv) {
+  struct rgb_t rgb;
 
-uint32_t hsv_to_rgb(uint32_t hsv) {
-  float h = ((hsv >> 16) & 0xff) / 255.0;
-  float s = ((hsv >> 8) & 0xff) / 255.0;
-  float v = ((hsv) & 0xff) / 255.0;
-  
   // Some shade of grey, use the value for all color channels
-  if (s < FLT_EPSILON) {
-    return RGB_F(v, v, v);
+  if (hsv.s < FLT_EPSILON) {
+    rgb.r = hsv.v * 255.0;
+    rgb.g = hsv.v * 255.0;
+    rgb.b = hsv.v * 255.0;
+    return rgb;
   }
 
-  int region = floor(h * 6);
-  float remainder = (h * 6) - region;
-  float p = v * (1.0 - s);
-  float q = v * (1.0 - (s * remainder));
-  float t = v * (1.0 - (s * (1.0 - remainder)));
+  // Map the hue to one of 6 sectors
+  float sector = hsv.h;
+  if (sector >= 360.0) { 
+    sector = 0.0;
+  }
+  sector /= 60.0;
+  const int sectorIndex = floor(sector);
+  const float remainder = sector - sectorIndex;
+  
+  const float p = hsv.v * (1.0 - hsv.s);
+  const float q = hsv.v * (1.0 - (hsv.s * remainder));
+  const float t = hsv.v * (1.0 - (hsv.s * (1.0 - remainder)));
 
-  switch (region) {
+  switch (sectorIndex) {
     case 0:
-      return RGB_F(v, t, p);
+      rgb.r = 255.0 * hsv.v;
+      rgb.g = 255.0 * t;
+      rgb.b = 255.0 * p;
+      break;
     case 1:
-      return RGB_F(q, v, p);
+      rgb.r = 255.0 * q;
+      rgb.g = 255.0 * hsv.v;
+      rgb.b = 255.0 * p;
+      break;
     case 2:
-      return RGB_F(p, v, t);
+      rgb.r = 255.0 * p;
+      rgb.g = 255.0 * hsv.v;
+      rgb.b = 255.0 * t;
+      break;
     case 3:
-      return RGB_F(p, q, v);
+      rgb.r = 255.0 * p;
+      rgb.g = 255.0 * q;
+      rgb.b = 255.0 * hsv.v;
+      break;
     case 4:
-      return RGB_F(t, p, v);
+      rgb.r = 255.0 * t;
+      rgb.g = 255.0 * p;
+      rgb.b = 255.0 * hsv.v;
+      break;
     default:
-      return RGB_F(v, p, q);
+      rgb.r = 255.0 * hsv.v;
+      rgb.g = 255.0 * p;
+      rgb.b = 255.0 * q;
+      break;
   }
+  
+  return rgb;
 }
 
-#define HSV(H,S,V)    (((uint32_t) (H) << 16) | ((uint32_t) (S) << 8) | ((uint32_t) (V)))
-// Hue is degrees 0-360, saturation is 0-1, value is 0-1
-#define HSV_F(H,S,V)  HSV(((byte) (255.0 * ((H) / 360.0))), ((byte) (255.0 * (S))), ((byte) (255.0 * (V))))
-
-uint32_t rgb_to_hsv(uint32_t rgb) {
-  float r = ((rgb >> 16) & 0xff) / 255.0;
-  float g = ((rgb >> 8) & 0xff) / 255.0;
-  float b = ((rgb) & 0xff) / 255.0;
-  float h, s, v;
+struct hsv_t rgb_to_hsv(struct rgb_t rgb) {
+  struct hsv_t hsv;
+  float r = rgb.r / 255.0;
+  float g = rgb.g / 255.0;
+  float b = rgb.b / 255.0;
   
   float rgb_min = MIN3(r, g, b);
   float rgb_max = MAX3(r, g, b);
 
   // v is the maximum channel
-  v = rgb_max;
+  hsv.v = rgb_max;
 
   // We can exit early for black
-  if (v == 0) {
-    h = 0.0;
-    s = 0.0;
-    return HSV_F(h, s, v);
+  if (hsv.v < FLT_EPSILON) {
+    hsv.h = 0.0;
+    hsv.s = 0.0;
+    return hsv;
   }
   
   // Normalize color channels against the value (the max color channel)
-  r /= v;
-  g /= v;
-  b /= v;
+  r /= hsv.v;
+  g /= hsv.v;
+  b /= hsv.v;
   rgb_min = MIN3(r, g, b);
   rgb_max = MAX3(r, g, b);
   
   // Saturation is the distance between the extreme color channels
-  s = rgb_max - rgb_min;
+  hsv.s = rgb_max - rgb_min;
 
   // If the saturation is 0, the color is some shade of gray
-  if (s < FLT_EPSILON) {
-    h = 0.0;
-    return HSV_F(h, s, v);
+  if (hsv.s < FLT_EPSILON) {
+    hsv.h = 0.0;
+    return hsv;
   }
 
   // Normalize color channels against value and saturation
@@ -755,15 +789,15 @@ uint32_t rgb_to_hsv(uint32_t rgb) {
   
   // Calculate the hue angle closest to which color is the max
   if (rgb_max == r) {
-    h = 0.0 + 60.0 * (g - b);
-    if (h < 0.0) {
-       h += 360.0;
+    hsv.h = 0.0 + 60.0 * (g - b);
+    if (hsv.h < 0.0) {
+       hsv.h += 360.0;
     }
   } else if (rgb_max == g) {
-    h = 120.0 + 60.0 * (b - r);
+    hsv.h = 120.0 + 60.0 * (b - r);
   } else {
-    h = 240.0 + 60.0 * (r - g);
+    hsv.h = 240.0 + 60.0 * (r - g);
   }
 
-  return HSV_F(h, s, v);
+  return hsv;
 }

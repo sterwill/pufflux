@@ -207,10 +207,10 @@ void setup() {
   state.fade_steps = 64;
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_FLOOD_ID;
-  state.fast = false;
+  state.animation = ANIM_SWIRL_ID;
+  state.fast = true;
   state.base_color = COLOR_BLUE_ID;
-  state.highlight_color = COLOR_RED_ID;
+  state.highlight_color = COLOR_WHITE_ID;
   
   print_state();
 }
@@ -395,7 +395,7 @@ void animate_flood() {
   set_color(4, color_ids[flood_queue[4]]);
   set_color(9, color_ids[flood_queue[4]]);
   
-  state.fade_steps = state.fast ? 64 : 128;
+  state.fade_steps = state.fast ? 180 : 400;
 
   // Rotate the queue one place if the period has elapsed
   if (time - last_time > (state.fast ? 256 : 512)) {
@@ -428,7 +428,7 @@ void animate_pulse() {
 void animate_swirl() {
   static unsigned long last_time = 0;
   const byte queue_size = 10;
-  static byte swirl_queue[queue_size] = {1, 1, 1, 0, 0, 0, 0, 0, 0, 0};
+  static byte swirl_queue[queue_size] = {1, 2, 1, 0, 0, 0, 0, 0, 0, 0};
   unsigned long time = millis();
   
   // Set the colors from the queue
@@ -448,7 +448,7 @@ void animate_swirl() {
   set_color(6, color_ids[swirl_queue[8]]);
   set_color(5, color_ids[swirl_queue[9]]);
   
-  state.fade_steps = state.fast ? 2 : 4;
+  state.fade_steps = state.fast ? 128 : 256;
 
   // Rotate the queue one place if the period has elapsed
   if (time - last_time > (state.fast ? 128 : 256)) {

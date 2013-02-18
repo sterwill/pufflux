@@ -207,7 +207,7 @@ void setup() {
   state.fade_steps = 64;
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_SWIRL_ID;
+  state.animation = ANIM_DEFAULT_ID;
   state.fast = true;
   state.base_color = COLOR_BLUE_ID;
   state.highlight_color = COLOR_WHITE_ID;

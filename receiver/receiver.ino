@@ -114,19 +114,14 @@ struct hsv_t {
   float v;
 };
 
+// Simple 0-255 channel values
 struct rgb_t {
   byte r;
   byte g;
   byte b;
 };
   
-static struct hsv_t hsv_values[11];
-
-/*
- * Reserve one hue value to mean "don't interpolate hue values to this one if
- * it's the target."
- */
-#define NULL_HUE 0xff
+static struct hsv_t hsv_values[MAX_COLOR_ID + 1];
 
 #define COLOR_ID_MASK           0b0000000000000111
 
@@ -206,7 +201,7 @@ void setup() {
   // Reset all the controllers and turn off the LEDs
   reset_leds();
 
-  randomSeed(2);
+  randomSeed(68);
   
   for (int i = 0; i < 10; i++) {
    state.target_colors[i] = hsv_values[COLOR_BLACK_ID];
@@ -216,10 +211,10 @@ void setup() {
   state.fade_steps = 64;
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_PULSE_ID;
+  state.animation = ANIM_DEFAULT_ID;
   state.fast = false;
-  state.base_color = COLOR_GREEN_ID;
-  state.highlight_color = COLOR_BLUE_ID;
+  state.base_color = COLOR_BLUE_ID;
+  state.highlight_color = COLOR_RED_ID;
   
   print_state();
 }
@@ -232,12 +227,6 @@ void loop() {
   }
     
   animate();
-    
-  /*
-   * A very small delay here helps our byte-sized step counters add up to meaningful
-   * times.  A delay of 16 ms makes 255 steps take at least 4096 ms, a good long fade.
-   */
-  //delay(16);
 }
 
 void print_state() {
@@ -490,13 +479,13 @@ void animate_default() {
   state.fade_steps = 255;
   
   if (next_time == 0 || time > next_time) {
-    // Avoid the NULL_HUE by only going to 255, because we want lots of hue
-    // shifts in this animation.  Bias the saturation high for bright colors,
-    // and bias the value up a bit.
     struct hsv_t new_color;
-    new_color.h = random(255);
-    new_color.s = 128 + random(128);
-    new_color.v = 64 + random(192);
+    // Choose any hue (0-360)
+    new_color.h = random(360);
+    // Bias the saturation way up (0.5-1.0)
+    new_color.s = 0.5 + (random(257) / 512.0);
+    // Bias the value up (0.25-1.0)
+    new_color.v = 0.25 + (random(193) / 256.0);
     
     for (int i = 0; i < 10; i++) {
       if (random(2) == 0) {
@@ -548,30 +537,41 @@ void step_colors() {
     float diff_s = tgt.s - cur.s;
     float diff_v = tgt.v - cur.v;
 
-    float adjust;
-
-    if (abs(diff_h) > FLT_EPSILON) {
-      /*
-       * Because hue wraps around, choose the shortest path. step preserves the sign
-       * of the difference.
-       */
-      float step = (tgt.h - src.h) / state.fade_steps;
-      if (diff_h < 0) {
-        adjust = min(-1, max(diff_h, step));
+    if (abs(diff_h) >= FLT_EPSILON) {
+      float abs_step = min(abs(diff_h), abs((tgt.h - src.h) / state.fade_steps));
+      // Hue wraps around, so find the shortest path
+      if ((diff_h > -180.0 && diff_h < 0.0) || (diff_h >= 180.0)) {
+        // diff_h is a small negative or a very large positive, so move negative
+        cur.h -= abs_step;
       } else {
-        adjust = max(1, min(diff_h, step));
+        // diff_h is a small positive or a very large negative, so move positive
+        cur.h += abs_step;
       }
-      cur.h += adjust;
+      // Correct for overflow or underflow
+      while (cur.h < 0.0) {
+        cur.h += 360.0;
+      } 
+      while (cur.h >= 360.0) {
+        cur.h -= 360.0;
+      }
     }
   
-    if (diff_s != 0) {
-      adjust = min(abs(diff_s), abs(tgt.s - src.s) / state.fade_steps);
-      cur.s += (diff_s > 0) ? adjust : -adjust;
+    if (abs(diff_s) >= FLT_EPSILON) {
+      float step = (tgt.s - src.s) / state.fade_steps;
+      if (diff_s < 0.0) {
+        cur.s += max(diff_s, step);
+      } else {
+        cur.s += min(diff_s, step);
+      }
     }
 
-    if (diff_v != 0) {    
-      adjust = min(abs(diff_v), abs(tgt.v - src.v) / state.fade_steps);
-      cur.v += (diff_v > 0) ? adjust : -adjust;
+    if (abs(diff_v) >= FLT_EPSILON) {    
+      float step = (tgt.v - src.v) / state.fade_steps;
+      if (diff_v < 0.0) {
+        cur.v += max(diff_v, step);
+      } else {
+        cur.v += min(diff_v, step);
+      }
     }
 
     state.current_colors[i] = cur;
@@ -593,6 +593,12 @@ void update_leds() {
   for (int i = 0; i < 10; i++) {
     struct rgb_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
     gbr[i] = ((uint32_t) rgb.g << 16) | ((uint32_t) rgb.b << 8) | ((uint32_t) rgb.r);
+    
+    if (i == 0) {
+    print_hsv(state.current_colors[led_send_order[i]]);
+    print_rgb(rgb);
+    Serial.println();
+    }
   }
   
   noInterrupts();

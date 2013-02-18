@@ -409,7 +409,7 @@ void animate_pulse() {
   static boolean flip = false;
   unsigned long time = millis();
   
-  state.fade_steps = state.fast ? 128 : 2048;
+  state.fade_steps = state.fast ? 256 : 1024;
 
   if (last_time == 0 || time - last_time > (state.fast ? 1024 : 4096)) {
     for (int i = 0; i < 10; i++) {

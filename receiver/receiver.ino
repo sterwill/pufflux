@@ -211,10 +211,10 @@ void setup() {
   state.fade_steps = 64;
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_DEFAULT_ID;
+  state.animation = ANIM_FLOOD_ID;
   state.fast = false;
   state.base_color = COLOR_BLUE_ID;
-  state.highlight_color = COLOR_RED_ID;
+  state.highlight_color = COLOR_BLUE_ID;
   
   print_state();
 }
@@ -367,10 +367,10 @@ void animate() {
 void animate_precipitation() {
   static unsigned long last_time = 0;
   unsigned long time = millis();
-  
-  state.fade_steps = state.fast ? 10 : 20;
 
-  if (last_time == 0 || time - last_time > (state.fast ? 32 : 64)) {
+  state.fade_steps = state.fast ? 256 : 512;
+
+  if (last_time == 0 || time - last_time > (state.fast ? 128 : 256)) {
     for (byte i = 0; i < 10; i++) {
       byte r = random(10);
       byte color_id = COLOR_BLACK_ID;
@@ -410,10 +410,10 @@ void animate_flood() {
   set_color(4, color_ids[flood_queue[4]]);
   set_color(9, color_ids[flood_queue[4]]);
   
-  state.fade_steps = state.fast ? 8 : 16;
+  state.fade_steps = state.fast ? 64 : 128;
 
   // Rotate the queue one place if the period has elapsed
-  if (time - last_time > (state.fast ? 128 : 256)) {
+  if (time - last_time > (state.fast ? 256 : 512)) {
     rotate_right(flood_queue, queue_size);
     last_time = time;
   }
@@ -537,7 +537,12 @@ void step_colors() {
     float diff_s = tgt.s - cur.s;
     float diff_v = tgt.v - cur.v;
 
-    if (abs(diff_h) >= FLT_EPSILON) {
+    /* 
+     * If the target saturation and value are 0, don't adjust the hue at all; 
+     * let it stay constant as we desaturate and darken.  This keeps us from wandering
+     * through neighboring colors when we really just need to get to black ASAP.
+     */
+    if (abs(diff_h) >= FLT_EPSILON && !(tgt.s < FLT_EPSILON && tgt.v < FLT_EPSILON)) {
       float abs_step = min(abs(diff_h), abs((tgt.h - src.h) / state.fade_steps));
       // Hue wraps around, so find the shortest path
       if ((diff_h > -180.0 && diff_h < 0.0) || (diff_h >= 180.0)) {
@@ -572,11 +577,20 @@ void step_colors() {
       } else {
         cur.v += min(diff_v, step);
       }
+      
+      if (i == 110) { 
+        print_hsv(src);
+        print_hsv(cur);
+        print_hsv(tgt);
+        Serial.println();
+      }
     }
 
     state.current_colors[i] = cur;
 
-    if (cur.h == tgt.h && cur.s == tgt.s && cur.v == tgt.v) {
+    // If we've reached the color (including black ignoring hue), reset the source
+    if (cur.h == tgt.h && cur.s == tgt.s && cur.v == tgt.v 
+        || cur.s < FLT_EPSILON && tgt.s < FLT_EPSILON && cur.v < FLT_EPSILON && tgt.v < FLT_EPSILON) {
       state.source_colors[i] = tgt;
     }
   }
@@ -594,11 +608,11 @@ void update_leds() {
     struct rgb_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
     gbr[i] = ((uint32_t) rgb.g << 16) | ((uint32_t) rgb.b << 8) | ((uint32_t) rgb.r);
     
-    if (i == 0) {
-    print_hsv(state.current_colors[led_send_order[i]]);
-    print_rgb(rgb);
-    Serial.println();
-    }
+    if (i == 0) { 
+      print_hsv(state.current_colors[led_send_order[i]]);
+        print_rgb(rgb);
+        Serial.println();
+      }
   }
   
   noInterrupts();
@@ -704,8 +718,8 @@ struct rgb_t hsv_to_rgb(struct hsv_t hsv) {
 
   // Map the hue to one of 6 sectors
   float sector = hsv.h;
-  if (sector >= 360.0) { 
-    sector = 0.0;
+  while (sector >= 360.0) { 
+    sector -= 360.0;
   }
   sector /= 60.0;
   const int sectorIndex = floor(sector);
@@ -796,13 +810,17 @@ struct hsv_t rgb_to_hsv(struct rgb_t rgb) {
   // Calculate the hue angle closest to which color is the max
   if (rgb_max == r) {
     hsv.h = 0.0 + 60.0 * (g - b);
-    if (hsv.h < 0.0) {
-       hsv.h += 360.0;
-    }
   } else if (rgb_max == g) {
     hsv.h = 120.0 + 60.0 * (b - r);
   } else {
     hsv.h = 240.0 + 60.0 * (r - g);
+  }
+
+  while (hsv.h < 0.0) {
+    hsv.h += 360.0;
+  }
+  while (hsv.h >= 360.0) {
+    hsv.h -= 360.0;
   }
 
   return hsv;

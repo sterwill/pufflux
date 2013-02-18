@@ -91,7 +91,7 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 /************************************************************************/
 
 /*
- * You can change the HSV values of these colors, but don't change the
+ * You can change the RGB values of these colors, but don't change the
  * count or IDs without changing the transmitter software to match.
  */
 #define COLOR_BLACK_ID          0
@@ -107,21 +107,17 @@ const byte led_send_order[10] = { 1, 0, 7, 2, 3, 4, 6, 5, 8, 9 };
 #define COLOR_ORANGE_ID         10
 #define MAX_COLOR_ID            10
 
-// Hue is degrees 0-360, saturation is 0-1, value is 0-1
-struct hsv_t {
-  float h;
-  float s;
-  float v;
+// Each channel is 0-1
+struct rgb_t {
+  float r;
+  float g;
+  float b;
 };
 
-// Simple 0-255 channel values
-struct rgb_t {
-  byte r;
-  byte g;
-  byte b;
-};
+// Defines an rgb_t 
+#define RGB_HEX(R,G,B)  ((struct rgb_t) { ((R) / 255.0), ((G) / 255.0), ((B) / 255.0) })
   
-static struct hsv_t hsv_values[MAX_COLOR_ID + 1];
+static struct rgb_t rgb_values[MAX_COLOR_ID + 1];
 
 #define COLOR_ID_MASK           0b0000000000000111
 
@@ -164,10 +160,10 @@ struct cloud_state {
   uint32_t base_color;
   uint32_t highlight_color;
 
-  // LED states, HSV color space
-  struct hsv_t target_colors[10];
-  struct hsv_t current_colors[10];
-  struct hsv_t source_colors[10];
+  // LED states, RGB color space
+  struct rgb_t target_colors[10];
+  struct rgb_t current_colors[10];
+  struct rgb_t source_colors[10];
   int fade_steps;
 };
 static struct cloud_state state;
@@ -177,17 +173,17 @@ void setup() {
   Serial.begin(115200);
 #endif
 
-  hsv_values[COLOR_BLACK_ID] = rgb_to_hsv((struct rgb_t)         { 0x00, 0x00, 0x00 });
-  hsv_values[COLOR_WHITE_ID] = rgb_to_hsv((struct rgb_t)         { 0xff, 0xff, 0xff });
-  hsv_values[COLOR_RED_ID] = rgb_to_hsv((struct rgb_t)           { 0xff, 0x00, 0x00 });
-  hsv_values[COLOR_GREEN_ID] = rgb_to_hsv((struct rgb_t)         { 0x00, 0xff, 0x00 });
-  hsv_values[COLOR_BLUE_ID] = rgb_to_hsv((struct rgb_t)          { 0x00, 0x00, 0xff });
-  hsv_values[COLOR_LIGHT_BLUE_ID] = rgb_to_hsv((struct rgb_t)    { 0xb5, 0xdd, 0xff });
-  hsv_values[COLOR_DARK_BLUE_ID] = rgb_to_hsv((struct rgb_t)     { 0x16, 0x88, 0xfa });
-  hsv_values[COLOR_LIGHT_GRAY_ID] = rgb_to_hsv((struct rgb_t)    { 0xaa, 0xaa, 0xaa });
-  hsv_values[COLOR_DARK_GRAY_ID] = rgb_to_hsv((struct rgb_t)     { 0x30, 0x30, 0x30 });
-  hsv_values[COLOR_YELLOW_ID] = rgb_to_hsv((struct rgb_t)        { 0xfc, 0xec, 0x5b });
-  hsv_values[COLOR_ORANGE_ID] = rgb_to_hsv((struct rgb_t)        { 0xff, 0x89, 0x00 });
+  rgb_values[COLOR_BLACK_ID] =        RGB_HEX(0x00, 0x00, 0x00);
+  rgb_values[COLOR_WHITE_ID] =        RGB_HEX(0xff, 0xff, 0xff);
+  rgb_values[COLOR_RED_ID] =          RGB_HEX(0xff, 0x00, 0x00);
+  rgb_values[COLOR_GREEN_ID] =        RGB_HEX(0x00, 0xff, 0x00);
+  rgb_values[COLOR_BLUE_ID] =         RGB_HEX(0x00, 0x00, 0xff);
+  rgb_values[COLOR_LIGHT_BLUE_ID] =   RGB_HEX(0xb5, 0xdd, 0xff);
+  rgb_values[COLOR_DARK_BLUE_ID] =    RGB_HEX(0x16, 0x88, 0xfa);
+  rgb_values[COLOR_LIGHT_GRAY_ID] =   RGB_HEX(0xaa, 0xaa, 0xaa);
+  rgb_values[COLOR_DARK_GRAY_ID] =    RGB_HEX(0x30, 0x30, 0x30);
+  rgb_values[COLOR_YELLOW_ID] =       RGB_HEX(0xfc, 0xec, 0x5b);
+  rgb_values[COLOR_ORANGE_ID] =       RGB_HEX(0xff, 0x89, 0x00);
 
   // Configure which pins in the port are in vs. out
   CONFIG_DDR();
@@ -204,9 +200,9 @@ void setup() {
   randomSeed(68);
   
   for (int i = 0; i < 10; i++) {
-   state.target_colors[i] = hsv_values[COLOR_BLACK_ID];
-   state.current_colors[i] = hsv_values[COLOR_BLACK_ID];
-   state.source_colors[i] = hsv_values[COLOR_BLACK_ID];
+   state.target_colors[i] = rgb_values[COLOR_BLACK_ID];
+   state.current_colors[i] = rgb_values[COLOR_BLACK_ID];
+   state.source_colors[i] = rgb_values[COLOR_BLACK_ID];
   }
   state.fade_steps = 64;
 
@@ -214,7 +210,7 @@ void setup() {
   state.animation = ANIM_FLOOD_ID;
   state.fast = false;
   state.base_color = COLOR_BLUE_ID;
-  state.highlight_color = COLOR_BLUE_ID;
+  state.highlight_color = COLOR_RED_ID;
   
   print_state();
 }
@@ -245,22 +241,11 @@ void print_state() {
 
 void print_rgb(struct rgb_t rgb) {
 #ifdef DEBUG
-  Serial.print(rgb.r, HEX);
+  Serial.print(rgb.r);
   Serial.print(",");
-  Serial.print(rgb.g, HEX);
+  Serial.print(rgb.g);
   Serial.print(",");
-  Serial.print(rgb.b, HEX);
-  Serial.print(" ");
-#endif
-}
-
-void print_hsv(struct hsv_t hsv) {
-#ifdef DEBUG
-  Serial.print(hsv.h);
-  Serial.print(",");
-  Serial.print(hsv.s);
-  Serial.print(",");
-  Serial.print(hsv.v);
+  Serial.print(rgb.b);
   Serial.print(" ");
 #endif
 }
@@ -476,20 +461,17 @@ void animate_default() {
   static unsigned long next_time = 0;
   unsigned long time = millis();
 
-  state.fade_steps = 255;
+  state.fade_steps = 512;
   
   if (next_time == 0 || time > next_time) {
-    struct hsv_t new_color;
-    // Choose any hue (0-360)
-    new_color.h = random(360);
-    // Bias the saturation way up (0.5-1.0)
-    new_color.s = 0.5 + (random(257) / 512.0);
-    // Bias the value up (0.25-1.0)
-    new_color.v = 0.25 + (random(193) / 256.0);
+    struct rgb_t new_color;
+    new_color.r = random(256) / 255.0;
+    new_color.g = random(256) / 255.0;
+    new_color.b = random(256) / 255.0;
     
     for (int i = 0; i < 10; i++) {
-      if (random(2) == 0) {
-        set_color_hsv(i, new_color);
+      if (random(3) == 0) {
+        set_color_rgb(i, new_color);
       }
     }
 
@@ -501,15 +483,15 @@ void animate_default() {
  * Sets the desired indexed color for the specified LED.
  */
 void set_color(const byte led, const byte color_id) {
-  set_color_hsv(led, hsv_values[color_id]);
+  set_color_rgb(led, rgb_values[color_id]);
 }
 
 /*
- * Sets the desired HSV color for the specified LED.
+ * Sets the desired RGB color for the specified LED.
  */
-void set_color_hsv(const byte led, const struct hsv_t hsv) {
-  if (state.target_colors[led].h != hsv.h || state.target_colors[led].s != hsv.s || state.target_colors[led].v != hsv.v) {
-    state.target_colors[led] = hsv;
+void set_color_rgb(const byte led, const struct rgb_t rgb) {
+  if (state.target_colors[led].r != rgb.r || state.target_colors[led].g != rgb.g || state.target_colors[led].b != rgb.b) {
+    state.target_colors[led] = rgb;
     // Reset the source so the next color step knows where we started from
     state.source_colors[led] = state.current_colors[led];
   }
@@ -522,9 +504,9 @@ void set_color_hsv(const byte led, const struct hsv_t hsv) {
 void step_colors() {
   // For each LED
   for (int i = 0; i < 10; i++) {
-    struct hsv_t tgt = state.target_colors[i];
-    struct hsv_t cur = state.current_colors[i];
-    struct hsv_t src = state.source_colors[i];
+    struct rgb_t tgt = state.target_colors[i];
+    struct rgb_t cur = state.current_colors[i];
+    struct rgb_t src = state.source_colors[i];
 
     /*
      * Each step moves "cur" closer to "tgt" by an amount that's a fraction of
@@ -533,64 +515,40 @@ void step_colors() {
      * new step sizes.
      */
 
-    float diff_h = tgt.h - cur.h;
-    float diff_s = tgt.s - cur.s;
-    float diff_v = tgt.v - cur.v;
-
-    /* 
-     * If the target saturation and value are 0, don't adjust the hue at all; 
-     * let it stay constant as we desaturate and darken.  This keeps us from wandering
-     * through neighboring colors when we really just need to get to black ASAP.
-     */
-    if (abs(diff_h) >= FLT_EPSILON && !(tgt.s < FLT_EPSILON && tgt.v < FLT_EPSILON)) {
-      float abs_step = min(abs(diff_h), abs((tgt.h - src.h) / state.fade_steps));
-      // Hue wraps around, so find the shortest path
-      if ((diff_h > -180.0 && diff_h < 0.0) || (diff_h >= 180.0)) {
-        // diff_h is a small negative or a very large positive, so move negative
-        cur.h -= abs_step;
+    float diff_r = tgt.r - cur.r;
+    float diff_g = tgt.g - cur.g;
+    float diff_b = tgt.b - cur.b;
+    
+    if (abs(diff_r) >= FLT_EPSILON) {
+      float step = (tgt.r - src.r) / state.fade_steps;
+      if (diff_r < 0.0) {
+        cur.r += max(diff_r, step);
       } else {
-        // diff_h is a small positive or a very large negative, so move positive
-        cur.h += abs_step;
-      }
-      // Correct for overflow or underflow
-      while (cur.h < 0.0) {
-        cur.h += 360.0;
-      } 
-      while (cur.h >= 360.0) {
-        cur.h -= 360.0;
+        cur.r += min(diff_r, step);
       }
     }
   
-    if (abs(diff_s) >= FLT_EPSILON) {
-      float step = (tgt.s - src.s) / state.fade_steps;
-      if (diff_s < 0.0) {
-        cur.s += max(diff_s, step);
+    if (abs(diff_g) >= FLT_EPSILON) {
+      float step = (tgt.g - src.g) / state.fade_steps;
+      if (diff_g < 0.0) {
+        cur.g += max(diff_g, step);
       } else {
-        cur.s += min(diff_s, step);
+        cur.g += min(diff_g, step);
       }
     }
 
-    if (abs(diff_v) >= FLT_EPSILON) {    
-      float step = (tgt.v - src.v) / state.fade_steps;
-      if (diff_v < 0.0) {
-        cur.v += max(diff_v, step);
+    if (abs(diff_b) >= FLT_EPSILON) {    
+      float step = (tgt.b - src.b) / state.fade_steps;
+      if (diff_b < 0.0) {
+        cur.b += max(diff_b, step);
       } else {
-        cur.v += min(diff_v, step);
-      }
-      
-      if (i == 110) { 
-        print_hsv(src);
-        print_hsv(cur);
-        print_hsv(tgt);
-        Serial.println();
+        cur.b += min(diff_b, step);
       }
     }
 
     state.current_colors[i] = cur;
 
-    // If we've reached the color (including black ignoring hue), reset the source
-    if (cur.h == tgt.h && cur.s == tgt.s && cur.v == tgt.v 
-        || cur.s < FLT_EPSILON && tgt.s < FLT_EPSILON && cur.v < FLT_EPSILON && tgt.v < FLT_EPSILON) {
+    if (cur.r == tgt.r && cur.g == tgt.g && cur.b == tgt.b) { 
       state.source_colors[i] = tgt;
     }
   }
@@ -605,14 +563,9 @@ void update_leds() {
   
   // hsv_to_rgb is too slow to run in the noInterrupts section
   for (int i = 0; i < 10; i++) {
-    struct rgb_t rgb = hsv_to_rgb(state.current_colors[led_send_order[i]]);
-    gbr[i] = ((uint32_t) rgb.g << 16) | ((uint32_t) rgb.b << 8) | ((uint32_t) rgb.r);
-    
-    if (i == 0) { 
-      print_hsv(state.current_colors[led_send_order[i]]);
-        print_rgb(rgb);
-        Serial.println();
-      }
+    struct rgb_t rgb = post_process(state.current_colors[led_send_order[i]]);
+    // Scale to byte values
+    gbr[i] = ((uint32_t) (rgb.g * 255) << 16) | ((uint32_t) (rgb.b * 255) << 8) | ((uint32_t) (rgb.r * 255));
   }
   
   noInterrupts();
@@ -705,123 +658,19 @@ void rotate_right(byte array[], byte size) {
   array[0] = tail;
 }
 
-struct rgb_t hsv_to_rgb(struct hsv_t hsv) {
-  struct rgb_t rgb;
-
-  // Some shade of grey, use the value for all color channels
-  if (hsv.s < FLT_EPSILON) {
-    rgb.r = hsv.v * 255.0;
-    rgb.g = hsv.v * 255.0;
-    rgb.b = hsv.v * 255.0;
-    return rgb;
-  }
-
-  // Map the hue to one of 6 sectors
-  float sector = hsv.h;
-  while (sector >= 360.0) { 
-    sector -= 360.0;
-  }
-  sector /= 60.0;
-  const int sectorIndex = floor(sector);
-  const float remainder = sector - sectorIndex;
-  
-  const float p = hsv.v * (1.0 - hsv.s);
-  const float q = hsv.v * (1.0 - (hsv.s * remainder));
-  const float t = hsv.v * (1.0 - (hsv.s * (1.0 - remainder)));
-
-  switch (sectorIndex) {
-    case 0:
-      rgb.r = 255.0 * hsv.v;
-      rgb.g = 255.0 * t;
-      rgb.b = 255.0 * p;
-      break;
-    case 1:
-      rgb.r = 255.0 * q;
-      rgb.g = 255.0 * hsv.v;
-      rgb.b = 255.0 * p;
-      break;
-    case 2:
-      rgb.r = 255.0 * p;
-      rgb.g = 255.0 * hsv.v;
-      rgb.b = 255.0 * t;
-      break;
-    case 3:
-      rgb.r = 255.0 * p;
-      rgb.g = 255.0 * q;
-      rgb.b = 255.0 * hsv.v;
-      break;
-    case 4:
-      rgb.r = 255.0 * t;
-      rgb.g = 255.0 * p;
-      rgb.b = 255.0 * hsv.v;
-      break;
-    default:
-      rgb.r = 255.0 * hsv.v;
-      rgb.g = 255.0 * p;
-      rgb.b = 255.0 * q;
-      break;
-  }
-  
+/*
+ * Adjust the RGB channel values for the LED hardware we have.
+ */
+struct rgb_t post_process(struct rgb_t rgb) {
   return rgb;
-}
-
-struct hsv_t rgb_to_hsv(struct rgb_t rgb) {
-  struct hsv_t hsv;
-  float r = rgb.r / 255.0;
-  float g = rgb.g / 255.0;
-  float b = rgb.b / 255.0;
-  
-  float rgb_min = MIN3(r, g, b);
-  float rgb_max = MAX3(r, g, b);
-
-  // v is the maximum channel
-  hsv.v = rgb_max;
-
-  // We can exit early for black
-  if (hsv.v < FLT_EPSILON) {
-    hsv.h = 0.0;
-    hsv.s = 0.0;
-    return hsv;
+  if (rgb.r < 0x40) {
+    rgb.r = 0;
   }
-  
-  // Normalize color channels against the value (the max color channel)
-  r /= hsv.v;
-  g /= hsv.v;
-  b /= hsv.v;
-  rgb_min = MIN3(r, g, b);
-  rgb_max = MAX3(r, g, b);
-  
-  // Saturation is the distance between the extreme color channels
-  hsv.s = rgb_max - rgb_min;
-
-  // If the saturation is 0, the color is some shade of gray
-  if (hsv.s < FLT_EPSILON) {
-    hsv.h = 0.0;
-    return hsv;
+  if (rgb.g < 0x40) {
+    rgb.g = 0;
   }
-
-  // Normalize color channels against value and saturation
-  r = (r - rgb_min) / (rgb_max - rgb_min);
-  g = (g - rgb_min) / (rgb_max - rgb_min);
-  b = (b - rgb_min) / (rgb_max - rgb_min);
-  rgb_min = MIN3(r, g, b);
-  rgb_max = MAX3(r, g, b);
-  
-  // Calculate the hue angle closest to which color is the max
-  if (rgb_max == r) {
-    hsv.h = 0.0 + 60.0 * (g - b);
-  } else if (rgb_max == g) {
-    hsv.h = 120.0 + 60.0 * (b - r);
-  } else {
-    hsv.h = 240.0 + 60.0 * (r - g);
+  if (rgb.b < 0x40) {
+    rgb.b = 0;
   }
-
-  while (hsv.h < 0.0) {
-    hsv.h += 360.0;
-  }
-  while (hsv.h >= 360.0) {
-    hsv.h -= 360.0;
-  }
-
-  return hsv;
+  return rgb;
 }

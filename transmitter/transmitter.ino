@@ -18,10 +18,11 @@
  
 // #define DEBUG
  
-#define TX_LED   13
-#define TX       8
+#define ON_LED   13
+#define TX_LED   A1
+#define TX       A0
 #define CHAN_0   9
-#define CHAN_1   10
+#define CHAN_1   10 
 #define CHAN_2   11
 #define CHAN_3   12
 
@@ -33,12 +34,15 @@
 
 void setup() {
   Serial.begin(115200);
+  pinMode(ON_LED, OUTPUT);
   pinMode(TX_LED, OUTPUT);
   pinMode(TX, OUTPUT);
   pinMode(CHAN_0, OUTPUT);
   pinMode(CHAN_1, OUTPUT);
   pinMode(CHAN_2, OUTPUT);
   pinMode(CHAN_3, OUTPUT);
+
+  digitalWrite(ON_LED, HIGH);
 }
 
 /*

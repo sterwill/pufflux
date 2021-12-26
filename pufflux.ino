@@ -33,6 +33,9 @@
 
 #include <float.h>
 #include <Adafruit_NeoPixel.h>
+#include <WiFi101.h>
+
+#include "config.h"
 
 // Turns on some serial port output
 #define DEBUG
@@ -198,12 +201,26 @@ void setup() {
   state.base_color = COLOR_BLUE_ID;
   state.highlight_color = COLOR_WHITE_ID;
 
+  WiFi.setPins(8, 7, 4, 2);
+  WiFi.begin(WIFI_SSID, WIFI_PASSPHRASE);
+
   print_state();
 }
 
 void loop() {
-  // TODO query for the weather
+  get_weather();
   animate();
+}
+
+void get_weather() {
+  static unsigned long last_time = 0;
+  unsigned long time = millis();
+
+  if (last_time == 0 || time - last_time > 1000) {
+    Serial.print("Network time: ");
+    Serial.println(WiFi.getTime());
+    last_time = time;
+  }
 }
 
 void print_state() {
@@ -387,10 +404,7 @@ void animate_default() {
         new_color.b /= 3.0;
         break;
     }
-    
-    print_rgb(new_color);
-    Serial.println();
-    
+   
     for (int i = 0; i < LED_COUNT; i++) {
       if (random(3) == 0) {
         set_color_rgb(i, new_color);

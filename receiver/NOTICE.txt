@@ -1,2 +1,0 @@
-Pufflux Receiver
-Copyright 2013 Shaw Terwilliger <sterwill@tinfig.com>

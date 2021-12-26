@@ -183,8 +183,8 @@ void setup() {
   colors[COLOR_YELLOW_ID] =       RGB_HEX(0xfc, 0xec, 0x5b);
   colors[COLOR_ORANGE_ID] =       RGB_HEX(0xff, 0x89, 0x00);
 
-  // 8 starts with a pleasing purple
-  randomSeed(8);
+  // 90 starts with a pleasing purple
+  randomSeed(90);
   
   for (int i = 0; i < LED_COUNT; i++) {
    state.target_colors[i] = colors[COLOR_BLACK_ID];
@@ -367,17 +367,35 @@ void animate_default() {
   unsigned long time = millis();
 
   state.fade_in_steps = 512;
-  state.fade_out_steps = 512;
+  state.fade_out_steps = 1024;
 
   if (next_time == 0 || time > next_time) {
     struct rgb_t new_color;
     new_color.r = random(256) / 255.0;
     new_color.g = random(256) / 255.0;
     new_color.b = random(256) / 255.0;
+
+    // Cut one channel down so we get more vivid colors
+    switch (random(3)) {
+    case 0:
+        new_color.r /= 3.0;
+        break;
+    case 1:
+        new_color.g /= 3.0;
+        break;
+    case 2:
+        new_color.b /= 3.0;
+        break;
+    }
+    
+    print_rgb(new_color);
+    Serial.println();
     
     for (int i = 0; i < LED_COUNT; i++) {
-      if (random(10) == 0) {
+      if (random(3) == 0) {
         set_color_rgb(i, new_color);
+      } else {
+        set_color(i, COLOR_BLACK_ID);
       }
     }
 

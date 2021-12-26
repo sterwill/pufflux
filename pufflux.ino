@@ -17,38 +17,11 @@
  * limitations under the License.
  */
 
-/*
- * LEDs are a single 68-element NeoPixel strip that forms a circle
- * around the chassis:
- *
- *  =67-56===========45-34=
- *         | 55-46 |
- *         |       | 
- *         | 12-21 |
- *  =00-11===========22-33=
- *             
- *             ^
- *       front |
- */
-
 #include <float.h>
 #include <Adafruit_NeoPixel.h>
 #include <WiFi101.h>
 
 #include "config.h"
-
-// Turns on some serial port output
-#define DEBUG
-
-// Pin the NeoPixel strip is connected to
-#define LED_PIN    1
-
-// Number of NeoPixels on the strip
-#define LED_COUNT  68
-
-/************************************************************************/
-/* You probably don't need to change anything below here.               */
-/************************************************************************/
 
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 

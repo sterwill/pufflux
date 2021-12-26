@@ -18,6 +18,11 @@
  */
 
 /*
+ * If defined, enables serial port output.
+ */
+#define DEBUG
+
+/*
  * Put your wifi network name and passphrase here.
  */
 #define WIFI_SSID       "Your network here"
@@ -32,13 +37,33 @@
  * For more information, see:
  * 
  * https://www.weather.gov/documentation/services-web-api
- * 
  */
-#define NWS_OFFICE "RAH"
-#define NWS_GRID_X "62"
-#define NWS_GRID_Y "62"
+#define NWS_OFFICE    "RAH"
+#define NWS_GRID_X    "62"
+#define NWS_GRID_Y    "62"
+#define NWSUSER_AGENT "pufflux/1 https://github.com/sterwill/pufflux"
 
 /* 
  * Fetch the weather forecast every this many minutes. 
  */
 #define FORECAST_PERIOD_MINUTES 15
+
+/*
+ * LEDs are a single 68-element NeoPixel strip that forms a circle
+ * around the chassis:
+ *
+ *  =67-56===========45-34=
+ *         | 55-46 |
+ *         |       | 
+ *         | 12-21 |
+ *  =00-11===========22-33=
+ *             
+ *             ^
+ *       front |
+ */
+
+// Pin the NeoPixel strip is connected to
+#define LED_PIN    1
+
+// Number of NeoPixels on the strip
+#define LED_COUNT  68

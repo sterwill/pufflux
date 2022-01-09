@@ -17,6 +17,9 @@
  * limitations under the License.
  */
 
+#ifndef __CONFIG_H_
+#define __CONFIG_H_
+
 /*
  * If defined, enables serial port output.
  */
@@ -29,19 +32,15 @@
 #define WIFI_PASSPHRASE "Your passphrase here"
 
 /*
- * Pufflux gets its forecast data from the USA's National Weather 
- * Service web API.  Replace the values below with your local 
- * weather office's name, and the X and Y coordinates of your
- * local grid cell.  All values should be strings.
- * 
- * For more information, see:
- * 
- * https://www.weather.gov/documentation/services-web-api
+ * Set the forecast location.  This must be a string that can be resolved 
+ * to a latitude and longitude using the ESRI ArcGIS web wervice, which is 
+ * what powers the search box on the National Weather Service's web site 
+ * (https://www.weather.gov/).  You can use a ZIP code, or a city and state
+ * like "Durham NC".  Test your search string at the weather.gov web
+ * site so you know it finds the right place.
  */
-#define NWS_OFFICE    "RAH"
-#define NWS_GRID_X    "62"
-#define NWS_GRID_Y    "62"
-#define NWSUSER_AGENT "pufflux/1 https://github.com/sterwill/pufflux"
+#define NWS_LOCATION   "Durham NC"
+#define NWS_USER_AGENT "pufflux/1 https://github.com/sterwill/pufflux"
 
 /* 
  * Fetch the weather forecast every this many minutes. 
@@ -67,3 +66,5 @@
 
 // Number of NeoPixels on the strip
 #define LED_COUNT  68
+
+#endif /* __CONFIG_H_ */

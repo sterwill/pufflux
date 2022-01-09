@@ -15,3 +15,12 @@ that wifi-enabled microcontrollers are cheap and easy to get, I decided to rebui
 there's only the lamp software, because it can do all its own weather forecast work when it's connected to wifi.
 
 You can find the code for version 1 in the "v1" branch.
+
+# SSL Certificates
+
+If you want to run this software, you'll have to upload SSL certificates to your microcontroller's
+firmware.  See [the Adafruit documentation](https://learn.adafruit.com/adafruit-feather-m0-wifi-atwinc1500/updating-ssl-certificates)
+for details.  Include certificates for these domains:
+
+- geocode.arcgis.com
+- api.weather.gov

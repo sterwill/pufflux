@@ -6,12 +6,17 @@
 #include "http.h"
 #include "urlencode.h"
 #include "util.h"
+#include "lights.h"
+
+// Most recently read alert phenomena and significance
+phen_cat_t phen_cat;
+phen_sig_t phen_sig;
 
 // URL-encoded location from config.h
 char encoded_location[64];
 
 // API responses can be large.  Pre-allocate one big buffer.
-char response[10240];
+char response[10 * 1024];
 int response_i;
 
 // Mappings of P-VTEC "pp" (phenomena) fields to our own categories.
@@ -79,22 +84,46 @@ int pp_cats[][3] = {
 phen_cat_t lookup_phen_cat(char p0, char p1) {
   for (int i = 0; i < (sizeof(pp_cats) / sizeof(pp_cats[0])); i++) {
     if (pp_cats[i][0] == p0 && pp_cats[i][1] == p1) {
-        return (phen_cat_t) pp_cats[i][2];
+      return (phen_cat_t) pp_cats[i][2];
     }
   }
   return CAT_UNKNOWN;
 }
 
-phen_cat_t parse_vtec_phen_cat(const char *p_vtec) {
+phen_sig_t lookup_phen_sig(char s0) {
+  switch (s0) {
+    case 'W':
+      return SIG_WARNING;
+    case 'A':
+      return SIG_WATCH;
+    case 'Y':
+      return SIG_ADVISTORY;
+    case 'S':
+      return SIG_STATEMENT;
+    case 'F':
+      return SIG_FORECAST;
+    case 'O':
+      return SIG_OUTLOOK;
+    case 'N':
+      return SIG_SYNOPSIS;
+    default:
+      return SIG_UNKNOWN;
+  }
+}
+
+bool parse_vtec(const char *p_vtec, phen_cat_t *phen_cat, phen_sig_t *phen_sig) {
   // VTEC is explained at https://www.weather.gov/vtec/.  It's a simple text encoding
   // for weather phenomena.  P-VTEC format follows this format:
   //
   //   /k.aaa.cccc.pp.s.####.yymmddThhnnZ-yymmddThhnnZ/
   if (strlen(p_vtec) < 48) {
     Serial.println("P-VTEC too short");
-    return CAT_UNKNOWN;
+    return false;
   }
-  return lookup_phen_cat(p_vtec[12], p_vtec[13]);
+
+  *phen_cat = lookup_phen_cat(p_vtec[12], p_vtec[13]);
+  *phen_sig = lookup_phen_sig(p_vtec[15]);
+  return true;
 }
 
 void get_full_body_cb(struct http_request *req) {
@@ -185,7 +214,7 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   strncpy(path + path_i, location, sizeof(path) - path_i - 1);
   path_i = strlen(path);
 
-    Serial.println(path);
+  Serial.println(path);
   memset(response, 0, sizeof(response));
   response_i = 0;
 
@@ -227,7 +256,7 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   return true;
 }
 
-bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat) {
+bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat, phen_sig_t * phen_sig) {
   const int tokens_size = 500;
   jsmntok_t tokens[tokens_size];
   jsmn_parser parser;
@@ -251,12 +280,10 @@ bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat) {
   }
 
   // Walk through the remaining tokens looking for feature objects in the features array.
-  // Each feature is a watch, warning, or advisory.  If there are multiple in the
-  // response, we'll just return the first one with a P-VTEC phenomena.  Use the
-  // API query filter to prevent unimportant ones coming back.
-  *phen_cat = CAT_UNKNOWN;
-  for (int feature_i = features_i + 1; feature_i < num_tokens && *phen_cat == CAT_UNKNOWN; feature_i++) {  
-    if (tokens[feature_i].type == JSMN_OBJECT && tokens[feature_i].parent == features_i) {       
+  // Each feature is a watch, warning, advisory, or similar.  We'll select the phenomena
+  // for the one with the highest significance (if there's a tie, we'll have the last one).
+  for (int feature_i = features_i + 1; feature_i < num_tokens; feature_i++) {
+    if (tokens[feature_i].type == JSMN_OBJECT && tokens[feature_i].parent == features_i) {
       int properties_i = find_json_prop(json, tokens, num_tokens, feature_i, "properties");
       if (properties_i == -1) {
         Serial.println("JSON missing features[].properties");
@@ -277,22 +304,29 @@ bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat) {
 
       // The VTEC value is an array of strings, but there's just going to be one (probably)
       int vtec_i = vtecs_i + 1;
-      
+
       char vtec_str[49];
       memset(vtec_str, 0, sizeof(vtec_str));
       size_t vtec_len = tokens[vtec_i].end - tokens[vtec_i].start;
-      strncpy(vtec_str, json + tokens[vtec_i].start, min(vtec_len, sizeof(vtec_str) - 1));     
-      *phen_cat = parse_vtec_phen_cat(json + tokens[vtec_i].start);
+      strncpy(vtec_str, json + tokens[vtec_i].start, min(vtec_len, sizeof(vtec_str) - 1));
 
-      // Found one, stop searching for phenomena
-      break;
+      // Parse out the phenomena and significance
+      phen_cat_t this_cat = CAT_UNKNOWN;
+      phen_sig_t this_sig = SIG_UNKNOWN;
+      if (parse_vtec(json + tokens[vtec_i].start, phen_cat, phen_sig)) {
+        // Write out the values if they're at least as significant as previous ones
+        if (this_sig >= *phen_sig) {
+          *phen_cat = this_cat;
+          *phen_sig = this_sig;
+        }
+      }
     }
   }
 
   return true;
 }
 
-bool get_active_alert_phen_cat(const char *lat, const char *lon, phen_cat_t *phen_cat) {
+bool get_active_alert(const char *lat, const char *lon, phen_cat_t *phen_cat, phen_sig_t *phen_sig) {
   Serial.println("Getting alerts");
 
   char path[128];
@@ -307,7 +341,7 @@ bool get_active_alert_phen_cat(const char *lat, const char *lon, phen_cat_t *phe
   path_i = strlen(path);
   strncpy(path + path_i, lon, sizeof(path) - path_i - 1);
   path_i = strlen(path);
-  
+
   memset(response, 0, sizeof(response));
   response_i = 0;
 
@@ -336,7 +370,7 @@ bool get_active_alert_phen_cat(const char *lat, const char *lon, phen_cat_t *phe
   Serial.print("Alerts response: ");
   Serial.println(response);
 
-  if (!parse_active_alerts_response(response, phen_cat)) {
+  if (!parse_active_alerts_response(response, phen_cat, phen_sig)) {
     Serial.println("Error parsing response");
     return false;
   }
@@ -402,14 +436,76 @@ void weather_loop(void) {
 
     // Get the phenomenon category for the current active alert.
     // If there is more than 1 active alert, we'll pick one arbitrarily.
-    phen_cat_t phen_cat;
-    if (!get_active_alert_phen_cat(lat, lon, &phen_cat)) {
+    if (!get_active_alert(lat, lon, &phen_cat, &phen_sig)) {
       next_time = now + (1000 * 10);
       return;
     }
 
-    // TODO update the lights some how
+    Serial.print("Active phenomenon category: ");
+    Serial.println(phen_cat);
+    Serial.print("Significance: ");
+    Serial.println(phen_sig);
 
-    next_time = now + (1000 * 60 * FORECAST_PERIOD_MINUTES);
+    // Update the lights.  Warnings get high speed, all else low.
+    bool fast = phen_sig == SIG_WARNING;
+    switch (phen_cat) {
+      case CAT_AIR_QUALITY:
+        lights_configure(ANIM_PULSE, fast, COLOR_LIGHT_GRAY, COLOR_YELLOW);
+        break;
+      case CAT_COLD:
+        lights_configure(ANIM_PULSE, fast, COLOR_LIGHT_GRAY, COLOR_DARK_BLUE);
+        break;
+      case CAT_HEAT:
+        lights_configure(ANIM_PULSE, fast, COLOR_WHITE, COLOR_ORANGE);
+        break;
+      case CAT_FLOOD:
+        lights_configure(ANIM_FLOOD, fast, COLOR_BLACK, COLOR_DARK_BLUE);
+        break;
+      case CAT_LOW_WATER:
+        lights_configure(ANIM_FLOOD, fast, COLOR_BLACK, COLOR_YELLOW);
+        break;
+      case CAT_MARINE:
+        lights_configure(ANIM_FLOOD, fast, COLOR_DARK_BLUE, COLOR_LIGHT_BLUE);
+        break;
+      case CAT_SNOW:
+        lights_configure(ANIM_PRECIP, fast, COLOR_BLACK, COLOR_WHITE);
+        break;
+      case CAT_WIND:
+        lights_configure(ANIM_SWIRL, fast, COLOR_DARK_GRAY, COLOR_LIGHT_GRAY);
+        break;
+      case CAT_DUST:
+        lights_configure(ANIM_PULSE, fast, COLOR_LIGHT_GRAY, COLOR_YELLOW);
+        break;
+      case CAT_FOG:
+        lights_configure(ANIM_PULSE, fast, COLOR_DARK_GRAY, COLOR_LIGHT_GRAY);
+        break;
+      case CAT_FREEZE:
+        lights_configure(ANIM_PULSE, fast, COLOR_LIGHT_GRAY, COLOR_LIGHT_BLUE);
+        break;
+      case CAT_FIRE:
+        lights_configure(ANIM_PULSE, fast, COLOR_BLACK, COLOR_ORANGE);
+        break;
+      case CAT_STORM:
+        lights_configure(ANIM_PRECIP, fast, COLOR_DARK_BLUE, COLOR_LIGHT_BLUE);
+        break;
+      case CAT_ICE:
+        lights_configure(ANIM_PRECIP, fast, COLOR_BLACK, COLOR_LIGHT_BLUE);
+        break;
+      case CAT_TORNADO:
+        lights_configure(ANIM_SWIRL, fast, COLOR_WHITE, COLOR_RED);
+        break;
+      default:
+        // This animation doesn't care about speed or colors
+        lights_configure(ANIM_DEFAULT, fast, COLOR_BLACK, COLOR_BLACK);
+        break;
+    }
+
+    //next_time = now + (1000 * 60 * FORECAST_PERIOD_MINUTES);
+    next_time = now + (1000);
   }
+}
+
+void weather_get_active_phenomena(phen_cat_t *cat, phen_sig_t *sig) {
+  *cat = phen_cat;
+  *sig = phen_sig;
 }

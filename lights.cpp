@@ -2,20 +2,7 @@
 #include <float.h>
 
 #include "config.h"
-
-// Colors for our animations
-#define COLOR_BLACK_ID          0
-#define COLOR_WHITE_ID          1
-#define COLOR_RED_ID            2
-#define COLOR_GREEN_ID          3
-#define COLOR_BLUE_ID           4
-#define COLOR_LIGHT_BLUE_ID     5
-#define COLOR_DARK_BLUE_ID      6
-#define COLOR_LIGHT_GRAY_ID     7
-#define COLOR_DARK_GRAY_ID      8
-#define COLOR_YELLOW_ID         9
-#define COLOR_ORANGE_ID         10
-#define MAX_COLOR_ID            COLOR_ORANGE_ID
+#include "lights.h"
 
 // Each channel is 0-1
 struct rgb_t {
@@ -24,26 +11,20 @@ struct rgb_t {
   float b;
 };
 
-// Defines an rgb_t 
+// Defines an rgb_t
 #define RGB_HEX(R,G,B)  ((struct rgb_t) { ((R) / 255.0), ((G) / 255.0), ((B) / 255.0) })
-  
-static struct rgb_t colors[MAX_COLOR_ID + 1];
 
-#define ANIM_DEFAULT_ID       0
-#define ANIM_PRECIPITATION_ID 1
-#define ANIM_FLOOD_ID         2
-#define ANIM_PULSE_ID         3
-#define ANIM_SWIRL_ID         4
+static struct rgb_t colors[COLOR_MAX + 1];
 
 #define MIN3(X,Y,Z)  (X < Y ? (X < Z ? X : Z) : (Y < Z ? Y : Z))
 #define MAX3(X,Y,Z)  (X > Y ? (X > Z ? X : Z) : (Y > Z ? Y : Z))
 
 // All colors are RGB order in this struct
 struct cloud_state {
-  byte animation;
+  anim_t animation;
   bool fast;
-  uint32_t base_color;
-  uint32_t highlight_color;
+  color_t base_color;
+  color_t highlight_color;
 
   // LED states, RGB color space
   struct rgb_t target_colors[LED_COUNT];
@@ -123,32 +104,32 @@ void lights_setup(void) {
   swirl_queue[15] = 2;
 
   // Initialize our named colors
-  colors[COLOR_BLACK_ID] =        RGB_HEX(0x00, 0x00, 0x00);
-  colors[COLOR_WHITE_ID] =        RGB_HEX(0xff, 0xff, 0xff);
-  colors[COLOR_RED_ID] =          RGB_HEX(0xff, 0x00, 0x00);
-  colors[COLOR_GREEN_ID] =        RGB_HEX(0x00, 0xff, 0x00);
-  colors[COLOR_BLUE_ID] =         RGB_HEX(0x00, 0x00, 0xff);
-  colors[COLOR_LIGHT_BLUE_ID] =   RGB_HEX(0xb5, 0xdd, 0xff);
-  colors[COLOR_DARK_BLUE_ID] =    RGB_HEX(0x16, 0x88, 0xfa);
-  colors[COLOR_LIGHT_GRAY_ID] =   RGB_HEX(0xaa, 0xaa, 0xaa);
-  colors[COLOR_DARK_GRAY_ID] =    RGB_HEX(0x30, 0x30, 0x30);
-  colors[COLOR_YELLOW_ID] =       RGB_HEX(0xfc, 0xec, 0x5b);
-  colors[COLOR_ORANGE_ID] =       RGB_HEX(0xff, 0x89, 0x00);
+  colors[COLOR_BLACK]      = RGB_HEX(0x00, 0x00, 0x00);
+  colors[COLOR_WHITE]      = RGB_HEX(0xff, 0xff, 0xff);
+  colors[COLOR_RED]        = RGB_HEX(0xff, 0x00, 0x00);
+  colors[COLOR_GREEN]      = RGB_HEX(0x00, 0xff, 0x00);
+  colors[COLOR_BLUE]       = RGB_HEX(0x00, 0x00, 0xff);
+  colors[COLOR_LIGHT_BLUE] = RGB_HEX(0xb5, 0xdd, 0xff);
+  colors[COLOR_DARK_BLUE]  = RGB_HEX(0x16, 0x88, 0xfa);
+  colors[COLOR_LIGHT_GRAY] = RGB_HEX(0xaa, 0xaa, 0xaa);
+  colors[COLOR_DARK_GRAY]  = RGB_HEX(0x30, 0x30, 0x30);
+  colors[COLOR_YELLOW]     = RGB_HEX(0xfc, 0xec, 0x5b);
+  colors[COLOR_ORANGE]     = RGB_HEX(0xff, 0x89, 0x00);
 
   // 90 starts with a pleasing purple
   randomSeed(90);
-  
+
   for (int i = 0; i < LED_COUNT; i++) {
-   state.target_colors[i] = colors[COLOR_BLACK_ID];
-   state.current_colors[i] = colors[COLOR_BLACK_ID];
-   state.source_colors[i] = colors[COLOR_BLACK_ID];
+    state.target_colors[i] = colors[COLOR_BLACK];
+    state.current_colors[i] = colors[COLOR_BLACK];
+    state.source_colors[i] = colors[COLOR_BLACK];
   }
 
   // The default animation doesn't care about the other fields
-  state.animation = ANIM_DEFAULT_ID;
+  state.animation = ANIM_DEFAULT;
   state.fast = true;
-  state.base_color = COLOR_BLUE_ID;
-  state.highlight_color = COLOR_WHITE_ID;
+  state.base_color = COLOR_BLUE;
+  state.highlight_color = COLOR_WHITE;
 }
 
 // Array of [a,b,c,d] becomes [d,a,b,c]
@@ -177,8 +158,8 @@ void rotate_left(byte array[], byte size) {
 }
 
 /*
- * Sets the desired RGB color for the specified LED.
- */
+   Sets the desired RGB color for the specified LED.
+*/
 void set_color_rgb(const byte led, const struct rgb_t rgb) {
   if (state.target_colors[led].r != rgb.r || state.target_colors[led].g != rgb.g || state.target_colors[led].b != rgb.b) {
     state.target_colors[led] = rgb;
@@ -187,9 +168,9 @@ void set_color_rgb(const byte led, const struct rgb_t rgb) {
   }
 }
 /*
- * Sets the desired indexed color for the specified LED.
- */
-void set_color(const byte led, const byte color_id) {
+   Sets the desired indexed color for the specified LED.
+*/
+void set_color(const byte led, const color_t color_id) {
   set_color_rgb(led, colors[color_id]);
 }
 
@@ -204,13 +185,13 @@ void animate_precipitation() {
   if (last_time == 0 || time - last_time > (state.fast ? 100 : 256)) {
     for (byte i = 0; i < LED_COUNT; i++) {
       byte r = random(LED_COUNT);
-      byte color_id = COLOR_BLACK_ID;
+      color_t color = COLOR_BLACK;
       if (r == 0) {
-        color_id = state.base_color;
+        color = state.base_color;
       } else if (r == 1) {
-        color_id = state.highlight_color;
+        color = state.highlight_color;
       }
-      set_color(i, color_id);
+      set_color(i, color);
     }
     last_time = time;
   }
@@ -220,10 +201,10 @@ void animate_precipitation() {
 void animate_flood() {
   static unsigned long last_time = 0;
   unsigned long time = millis();
-  
+
   // Set the colors from the queue
-  byte color_ids[3];
-  color_ids[0] = COLOR_BLACK_ID;
+  color_t color_ids[3];
+  color_ids[0] = COLOR_BLACK;
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
 
@@ -246,7 +227,7 @@ void animate_pulse() {
   static unsigned long last_time = 0;
   static boolean flip = false;
   unsigned long time = millis();
-  
+
   state.fade_in_steps = 128;
   state.fade_out_steps = 128;
 
@@ -255,7 +236,7 @@ void animate_pulse() {
       if (flip) {
         set_color(i, state.base_color);
       } else {
-        set_color(i, state.highlight_color);        
+        set_color(i, state.highlight_color);
       }
     }
     flip = !flip;
@@ -267,10 +248,10 @@ void animate_pulse() {
 void animate_swirl() {
   static unsigned long last_time = 0;
   unsigned long time = millis();
-  
+
   // Set the colors from the queue
-  byte color_ids[3];
-  color_ids[0] = COLOR_BLACK_ID;
+  color_t color_ids[3];
+  color_ids[0] = COLOR_BLACK;
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
 
@@ -305,22 +286,22 @@ void animate_default() {
 
     // Cut one channel down so we get more vivid colors
     switch (random(3)) {
-    case 0:
+      case 0:
         new_color.r /= 3.0;
         break;
-    case 1:
+      case 1:
         new_color.g /= 3.0;
         break;
-    case 2:
+      case 2:
         new_color.b /= 3.0;
         break;
     }
-   
+
     for (int i = 0; i < LED_COUNT; i++) {
       if (random(3) == 0) {
         set_color_rgb(i, new_color);
       } else {
-        set_color(i, COLOR_BLACK_ID);
+        set_color(i, COLOR_BLACK);
       }
     }
 
@@ -329,9 +310,9 @@ void animate_default() {
 }
 
 /*
- * Changes the "current" colors to be one step closer to the "target" colors.
- * Colors are interpolated linearly by channel.
- */
+   Changes the "current" colors to be one step closer to the "target" colors.
+   Colors are interpolated linearly by channel.
+*/
 void step_colors() {
   for (int i = 0; i < LED_COUNT; i++) {
     struct rgb_t tgt = state.target_colors[i];
@@ -339,16 +320,16 @@ void step_colors() {
     struct rgb_t src = state.source_colors[i];
 
     /*
-     * Each step moves "cur" closer to "tgt" by an amount that's a fraction of
-     * the original difference between "src" and "tgt".  When other functions 
-     * change the "tgt", they must also set the "src" to "cur" so we can calculate
-     * new step sizes.
-     */
+       Each step moves "cur" closer to "tgt" by an amount that's a fraction of
+       the original difference between "src" and "tgt".  When other functions
+       change the "tgt", they must also set the "src" to "cur" so we can calculate
+       new step sizes.
+    */
 
     float diff_r = tgt.r - cur.r;
     float diff_g = tgt.g - cur.g;
     float diff_b = tgt.b - cur.b;
-    
+
     if (abs(diff_r) >= FLT_EPSILON) {
       int steps = diff_r > 0.0 ? state.fade_in_steps : state.fade_out_steps;
       float step = (tgt.r - src.r) / steps;
@@ -358,7 +339,7 @@ void step_colors() {
         cur.r += min(diff_r, step);
       }
     }
-  
+
     if (abs(diff_g) >= FLT_EPSILON) {
       int steps = diff_g > 0.0 ? state.fade_in_steps : state.fade_out_steps;
       float step = (tgt.g - src.g) / steps;
@@ -381,15 +362,15 @@ void step_colors() {
 
     state.current_colors[i] = cur;
 
-    if (cur.r == tgt.r && cur.g == tgt.g && cur.b == tgt.b) { 
+    if (cur.r == tgt.r && cur.g == tgt.g && cur.b == tgt.b) {
       state.source_colors[i] = tgt;
     }
   }
 }
 
 /*
- * Updates the colors of all the LEDs to their "current" colors.
- */
+   Updates the colors of all the LEDs to their "current" colors.
+*/
 void update_leds() {
   for (int i = 0; i < LED_COUNT; i++) {
     struct rgb_t rgb = state.current_colors[i];
@@ -426,24 +407,32 @@ void print_rgb(struct rgb_t rgb) {
 
 void lights_loop(void) {
   switch (state.animation) {
-    case ANIM_PRECIPITATION_ID:
+    case ANIM_PRECIP:
       animate_precipitation();
       break;
-    case ANIM_FLOOD_ID:
+    case ANIM_FLOOD:
       animate_flood();
       break;
-    case ANIM_PULSE_ID:
+    case ANIM_PULSE:
       animate_pulse();
       break;
-    case ANIM_SWIRL_ID:
+    case ANIM_SWIRL:
       animate_swirl();
       break;
-    case ANIM_DEFAULT_ID:
+    case ANIM_DEFAULT:
     default:
       animate_default();
       break;
   }
-  
+
   step_colors();
   update_leds();
+}
+
+void lights_configure(anim_t animation, bool fast, color_t base_color, color_t highlight_color) {
+  state.animation = animation;
+  state.fast = fast;
+  state.base_color = base_color;
+  state.highlight_color = highlight_color;
+  print_state();
 }

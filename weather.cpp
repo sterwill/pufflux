@@ -7,26 +7,107 @@
 #include "urlencode.h"
 #include "util.h"
 
-class GetFullBodyCtx {
-  public:
-    String body;
+// URL-encoded location from config.h
+char encoded_location[64];
+
+// API responses can be large.  Pre-allocate one big buffer.
+char response[10240];
+int response_i;
+
+// Mappings of P-VTEC "pp" (phenomena) fields to our own categories.
+int pp_cats[][3] = {
+  {'A', 'F', CAT_AIR_QUALITY},
+  {'A', 'S', CAT_AIR_QUALITY},
+  {'S', 'M', CAT_AIR_QUALITY},
+  {'E', 'C', CAT_COLD},
+  {'W', 'C', CAT_COLD},
+  {'E', 'H', CAT_HEAT},
+  {'H', 'T', CAT_HEAT},
+  {'C', 'F', CAT_FLOOD},
+  {'F', 'A', CAT_FLOOD},
+  {'F', 'F', CAT_FLOOD},
+  {'F', 'L', CAT_FLOOD},
+  {'H', 'Y', CAT_FLOOD},
+  {'L', 'S', CAT_FLOOD},
+  {'L', 'O', CAT_LOW_WATER},
+  {'M', 'A', CAT_MARINE},
+  {'R', 'B', CAT_MARINE},
+  {'S', 'C', CAT_MARINE},
+  {'S', 'E', CAT_MARINE},
+  {'S', 'I', CAT_MARINE},
+  {'S', 'U', CAT_MARINE},
+  {'S', 'W', CAT_MARINE},
+  {'T', 'S', CAT_MARINE},
+  {'B', 'S', CAT_SNOW},
+  {'B', 'Z', CAT_SNOW},
+  {'H', 'S', CAT_SNOW},
+  {'L', 'B', CAT_SNOW},
+  {'L', 'E', CAT_SNOW},
+  {'S', 'B', CAT_SNOW},
+  {'S', 'N', CAT_SNOW},
+  {'B', 'W', CAT_WIND},
+  {'E', 'W', CAT_WIND},
+  {'G', 'L', CAT_WIND},
+  {'H', 'F', CAT_WIND},
+  {'H', 'I', CAT_WIND},
+  {'H', 'W', CAT_WIND},
+  {'L', 'W', CAT_WIND},
+  {'W', 'I', CAT_WIND},
+  {'D', 'S', CAT_DUST},
+  {'D', 'U', CAT_DUST},
+  {'F', 'G', CAT_FOG},
+  {'F', 'R', CAT_FREEZE},
+  {'F', 'Z', CAT_FREEZE},
+  {'H', 'Z', CAT_FREEZE},
+  {'F', 'W', CAT_FIRE},
+  {'H', 'U', CAT_STORM},
+  {'S', 'R', CAT_STORM},
+  {'S', 'V', CAT_STORM},
+  {'T', 'I', CAT_STORM},
+  {'T', 'R', CAT_STORM},
+  {'T', 'Y', CAT_STORM},
+  {'W', 'S', CAT_STORM},
+  {'I', 'P', CAT_ICE},
+  {'I', 'S', CAT_ICE},
+  {'U', 'P', CAT_ICE},
+  {'W', 'W', CAT_ICE},
+  {'Z', 'F', CAT_ICE},
+  {'Z', 'R', CAT_ICE},
+  {'T', 'O', CAT_TORNADO},
 };
 
-void get_full_body_cb(struct http_request *req) {
-  GetFullBodyCtx *ctx = (GetFullBodyCtx *) req->caller_ctx;
+phen_cat_t lookup_phen_cat(char p0, char p1) {
+  for (int i = 0; i < (sizeof(pp_cats) / sizeof(pp_cats[0])); i++) {
+    if (pp_cats[i][0] == p0 && pp_cats[i][1] == p1) {
+        return (phen_cat_t) pp_cats[i][2];
+    }
+  }
+  return CAT_UNKNOWN;
+}
 
+phen_cat_t parse_vtec_phen_cat(const char *p_vtec) {
+  // VTEC is explained at https://www.weather.gov/vtec/.  It's a simple text encoding
+  // for weather phenomena.  P-VTEC format follows this format:
+  //
+  //   /k.aaa.cccc.pp.s.####.yymmddThhnnZ-yymmddThhnnZ/
+  if (strlen(p_vtec) < 48) {
+    Serial.println("P-VTEC too short");
+    return CAT_UNKNOWN;
+  }
+  return lookup_phen_cat(p_vtec[12], p_vtec[13]);
+}
+
+void get_full_body_cb(struct http_request *req) {
   // Read the whole body
-  while (req->client->connected()) {
+  while (req->client->connected() && response_i < sizeof(response) - 1) {
     int c = req->client->read();
     if (c != -1) {
-      ctx->body += (char) c;
+      response[response_i++] = (char) c;
     }
   }
 }
 
-bool parse_geocode_response(String geocode_json, String &lat, String &lon) {
-  const char * json = geocode_json.c_str();
-
+bool parse_geocode_response(const char *json, char *lat, size_t lat_size, char *lon, size_t lon_size) {
   const int tokens_size = 500;
   jsmntok_t tokens[tokens_size];
   jsmn_parser parser;
@@ -82,29 +163,40 @@ bool parse_geocode_response(String geocode_json, String &lat, String &lon) {
     return false;
   }
 
-  lon = geocode_json.substring(tokens[x_i].start, tokens[x_i].end);
-  lat = geocode_json.substring(tokens[y_i].start, tokens[y_i].end);
+  memset(lon, 0, lon_size);
+  strncpy(lon, json + tokens[x_i].start, lon_size - 1);
+
+  memset(lat, 0, lat_size);
+  strncpy(lat, json + tokens[y_i].start, lat_size - 1);
+
   return true;
 }
 
-bool resolve_location_to_lat_lon(const char *location, String &lat, String &lon) {
+bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_size, char *lon, size_t lon_size) {
   Serial.print("Resolving location: ");
   Serial.println(location);
 
-  String path_and_query("/arcgis/rest/services/World/GeocodeServer/find?f=json&text=");
-  path_and_query += urlencode(NWS_LOCATION);
+  char path[128];
+  memset(path, 0, sizeof(path));
+  int path_i = strlen(path);
 
-  GetFullBodyCtx ctx;
+  strncpy(path + path_i, "/arcgis/rest/services/World/GeocodeServer/find?f=json&text=", sizeof(path) - path_i - 1);
+  path_i = strlen(path);
+  strncpy(path + path_i, location, sizeof(path) - path_i - 1);
+  path_i = strlen(path);
+
+    Serial.println(path);
+  memset(response, 0, sizeof(response));
+  response_i = 0;
 
   struct http_request req;
   http_request_init(&req);
   req.host = "geocode.arcgis.com";
   req.port = 443;
   req.ssl = true;
-  req.path_and_query = path_and_query.c_str();
+  req.path_and_query = path;
   req.header_cb = NULL;
   req.body_cb = get_full_body_cb;
-  req.caller_ctx = &ctx;
 
   http_get(&req);
 
@@ -114,15 +206,15 @@ bool resolve_location_to_lat_lon(const char *location, String &lat, String &lon)
     return false;
   }
 
-  if (ctx.body.length() == 0) {
+  if (response_i == 0) {
     Serial.println("Got empty geocode response");
     return false;
   }
 
   Serial.print("Geocode response: ");
-  Serial.println(ctx.body);
+  Serial.println(response);
 
-  if (!parse_geocode_response(ctx.body, lat, lon)) {
+  if (!parse_geocode_response(response, lat, lat_size, lon, lon_size)) {
     Serial.println("Error parsing response");
     return false;
   }
@@ -135,9 +227,7 @@ bool resolve_location_to_lat_lon(const char *location, String &lat, String &lon)
   return true;
 }
 
-bool parse_grid_response(String grid_json, String &grid_x, String &grid_y) {
-  const char * json = grid_json.c_str();
-
+bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat) {
   const int tokens_size = 500;
   jsmntok_t tokens[tokens_size];
   jsmn_parser parser;
@@ -154,92 +244,113 @@ bool parse_grid_response(String grid_json, String &grid_x, String &grid_y) {
     return false;
   }
 
-  int properties_i = find_json_prop(json, tokens, num_tokens, 0, "properties");
-  if (properties_i == -1) {
-    Serial.println("JSON missing properties");
+  int features_i = find_json_prop(json, tokens, num_tokens, 0, "features");
+  if (features_i == -1) {
+    Serial.println("JSON missing features");
     return false;
   }
 
-  int grid_x_i = find_json_prop(json, tokens, num_tokens, properties_i, "gridX");
-  if (grid_x_i == -1) {
-    Serial.println("JSON missing properties.gridX");
-    return false;
+  // Walk through the remaining tokens looking for feature objects in the features array.
+  // Each feature is a watch, warning, or advisory.  If there are multiple in the
+  // response, we'll just return the first one with a P-VTEC phenomena.  Use the
+  // API query filter to prevent unimportant ones coming back.
+  *phen_cat = CAT_UNKNOWN;
+  for (int feature_i = features_i + 1; feature_i < num_tokens && *phen_cat == CAT_UNKNOWN; feature_i++) {  
+    if (tokens[feature_i].type == JSMN_OBJECT && tokens[feature_i].parent == features_i) {       
+      int properties_i = find_json_prop(json, tokens, num_tokens, feature_i, "properties");
+      if (properties_i == -1) {
+        Serial.println("JSON missing features[].properties");
+        continue;
+      }
+
+      int parameters_i = find_json_prop(json, tokens, num_tokens, properties_i, "parameters");
+      if (parameters_i == -1) {
+        Serial.println("JSON missing features[].properties.parameters");
+        continue;
+      }
+
+      int vtecs_i = find_json_prop(json, tokens, num_tokens, parameters_i, "VTEC");
+      if (vtecs_i == -1) {
+        Serial.println("JSON missing features[].properties.parameters.VTEC");
+        continue;
+      }
+
+      // The VTEC value is an array of strings, but there's just going to be one (probably)
+      int vtec_i = vtecs_i + 1;
+      
+      char vtec_str[49];
+      memset(vtec_str, 0, sizeof(vtec_str));
+      size_t vtec_len = tokens[vtec_i].end - tokens[vtec_i].start;
+      strncpy(vtec_str, json + tokens[vtec_i].start, min(vtec_len, sizeof(vtec_str) - 1));     
+      *phen_cat = parse_vtec_phen_cat(json + tokens[vtec_i].start);
+
+      // Found one, stop searching for phenomena
+      break;
+    }
   }
 
-  int grid_y_i = find_json_prop(json, tokens, num_tokens, properties_i, "gridY");
-  if (grid_y_i == -1) {
-    Serial.println("JSON missing properties.gridY");
-    return false;
-  }
-
-  grid_x = grid_json.substring(tokens[grid_x_i].start, tokens[grid_x_i].end);
-  grid_y = grid_json.substring(tokens[grid_y_i].start, tokens[grid_y_i].end);
   return true;
 }
 
-bool resolve_lat_lon_to_grid(const String &lat, const String &lon, String &grid_x, String &grid_y) {
-  // NWS requires no more than 4 digits after the decimal point in the URL
-  String short_lat = lat.substring(0, lat.indexOf(".") + 5);
-  String short_lon = lon.substring(0, lon.indexOf(".") + 5);
+bool get_active_alert_phen_cat(const char *lat, const char *lon, phen_cat_t *phen_cat) {
+  Serial.println("Getting alerts");
+
+  char path[128];
+  memset(path, 0, sizeof(path));
+  int path_i = strlen(path);
+
+  strncpy(path + path_i, "/alerts/active?status=actual&point=", sizeof(path) - path_i - 1);
+  path_i = strlen(path);
+  strncpy(path + path_i, lat, sizeof(path) - path_i - 1);
+  path_i = strlen(path);
+  strncpy(path + path_i, "%2C", sizeof(path) - path_i - 1);
+  path_i = strlen(path);
+  strncpy(path + path_i, lon, sizeof(path) - path_i - 1);
+  path_i = strlen(path);
   
-  Serial.print("Resolving lat, lon: ");
-  Serial.print(short_lat);
-  Serial.print(",");
-  Serial.println(short_lon);
-
-  String path_and_query("/points/");
-  path_and_query += short_lat;
-  path_and_query += ",";
-  path_and_query += short_lon;
-
-  GetFullBodyCtx ctx;
+  memset(response, 0, sizeof(response));
+  response_i = 0;
 
   struct http_request req;
   http_request_init(&req);
   req.host = "api.weather.gov";
   req.port = 443;
   req.ssl = true;
-  req.path_and_query = path_and_query.c_str();
+  req.path_and_query = path;
   req.header_cb = NULL;
   req.body_cb = get_full_body_cb;
-  req.caller_ctx = &ctx;
 
   http_get(&req);
 
   if (req.status != 200) {
-    Serial.print("HTTP error getting grid: ");
+    Serial.print("HTTP error getting alerts: ");
     Serial.println(req.status, DEC);
     return false;
   }
 
-  if (ctx.body.length() == 0) {
-    Serial.println("Got empty grid response");
+  if (response_i == 0) {
+    Serial.println("Got empty alerts response");
     return false;
   }
 
-  Serial.print("Grid response: ");
-  Serial.println(ctx.body);
+  Serial.print("Alerts response: ");
+  Serial.println(response);
 
-  if (!parse_grid_response(ctx.body, grid_x, grid_y)) {
+  if (!parse_active_alerts_response(response, phen_cat)) {
     Serial.println("Error parsing response");
     return false;
   }
 
-  Serial.print("Resolved grid to: ");
-  Serial.print(grid_x);
-  Serial.print(",");
-  Serial.println(grid_y);
-
   return true;
-}
-
-bool get_forecast(const String &grid_x, const String &grid_y) {
-    return false;    
 }
 
 void weather_setup(void) {
   WiFi.setPins(8, 7, 4, 2);
   WiFi.begin(WIFI_SSID, WIFI_PASSPHRASE);
+
+  memset(encoded_location, 0, sizeof(encoded_location));
+  String loc = urlencode(NWS_LOCATION);
+  strncpy(encoded_location, loc.c_str(), sizeof(encoded_location) - 1);
 }
 
 const char *get_status_description(int status) {
@@ -267,12 +378,9 @@ const char *get_status_description(int status) {
 
 void weather_loop(void) {
   static unsigned long next_time = 0;
-  static String lat;
-  static String lon;
-  static String grid_x;
-  static String grid_y;
+  static char lat[10];
+  static char lon[10];
   static bool lat_lon_resolved = false;
-  static bool grid_resolved = false;
 
   unsigned long now = millis();
   if (now >= next_time) {
@@ -285,34 +393,22 @@ void weather_loop(void) {
 
     // Resolve the location to lat, lon
     if (!lat_lon_resolved) {
-      lat_lon_resolved = resolve_location_to_lat_lon(NWS_LOCATION, lat, lon);
+      lat_lon_resolved = resolve_location_to_lat_lon(encoded_location, lat, sizeof(lat), lon, sizeof(lon));
       if (!lat_lon_resolved) {
         next_time = now + (1000 * 10);
         return;
       }
     }
 
-    // Resolve the lat, lon to NWS grid x, grid y
-    if (!grid_resolved) {
-      grid_resolved = resolve_lat_lon_to_grid(lat, lon, grid_x, grid_y);
-      if (!grid_resolved) {
-        next_time = now + (1000 * 10);
-        return;
-      }
-    }
-
-    // Get the forecast
-    bool got_forecast = false;
-    Serial.print("Getting forecast at ");
-    Serial.println(WiFi.getTime());
-    got_forecast = get_forecast(grid_x, grid_y);
-
-    if (!got_forecast) {
-      Serial.println("Error getting forecast");
+    // Get the phenomenon category for the current active alert.
+    // If there is more than 1 active alert, we'll pick one arbitrarily.
+    phen_cat_t phen_cat;
+    if (!get_active_alert_phen_cat(lat, lon, &phen_cat)) {
       next_time = now + (1000 * 10);
       return;
     }
-    Serial.println("Got forecast");
+
+    // TODO update the lights some how
 
     next_time = now + (1000 * 60 * FORECAST_PERIOD_MINUTES);
   }

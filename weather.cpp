@@ -8,16 +8,37 @@
 #include "util.h"
 #include "lights.h"
 
-// Most recently read alert phenomena and significance
-phen_cat_t phen_cat;
-phen_sig_t phen_sig;
+// Arbitrary categories of types of VTEC "phenomena" (pp) field
+typedef enum {
+  CAT_UNKNOWN, // our own value
+  CAT_AIR_QUALITY,
+  CAT_COLD,
+  CAT_HEAT,
+  CAT_FLOOD,
+  CAT_LOW_WATER,
+  CAT_MARINE,
+  CAT_SNOW,
+  CAT_WIND,
+  CAT_DUST,
+  CAT_FOG,
+  CAT_FREEZE,
+  CAT_FIRE,
+  CAT_STORM,
+  CAT_ICE,
+  CAT_TORNADO,
+} phen_cat_t;
 
-// URL-encoded location from config.h
-char encoded_location[64];
-
-// API responses can be large.  Pre-allocate one big buffer.
-char response[10 * 1024];
-int response_i;
+// P-VTEC "significance" (s) field.  Ordered least- to most-significant.
+typedef enum {
+  SIG_UNKNOWN, // our own value
+  SIG_SYNOPSIS,
+  SIG_OUTLOOK,
+  SIG_FORECAST,
+  SIG_STATEMENT,
+  SIG_ADVISTORY,
+  SIG_WATCH,
+  SIG_WARNING,
+} phen_sig_t;
 
 // Mappings of P-VTEC "pp" (phenomena) fields to our own categories.
 int pp_cats[][3] = {
@@ -81,6 +102,13 @@ int pp_cats[][3] = {
   {'T', 'O', CAT_TORNADO},
 };
 
+// Most recently read alert phenomena and significance
+phen_cat_t most_significant_cat;
+phen_sig_t most_significant_sig;
+
+// URL-encoded location from config.h
+char encoded_location[64];
+
 phen_cat_t lookup_phen_cat(char p0, char p1) {
   for (int i = 0; i < (sizeof(pp_cats) / sizeof(pp_cats[0])); i++) {
     if (pp_cats[i][0] == p0 && pp_cats[i][1] == p1) {
@@ -111,27 +139,115 @@ phen_sig_t lookup_phen_sig(char s0) {
   }
 }
 
-bool parse_vtec(const char *p_vtec, phen_cat_t *phen_cat, phen_sig_t *phen_sig) {
+bool parse_vtec(const char *p_vtec, phen_cat_t *cat, phen_sig_t *sig) {
   // VTEC is explained at https://www.weather.gov/vtec/.  It's a simple text encoding
   // for weather phenomena.  P-VTEC format follows this format:
   //
   //   /k.aaa.cccc.pp.s.####.yymmddThhnnZ-yymmddThhnnZ/
-  if (strlen(p_vtec) < 48) {
-    Serial.println("P-VTEC too short");
+  //
+  // An example (with indexes):
+  //
+  //   /O.EXT.KCAE.LW.Y.0003.000000T0000Z-220117T1500Z/
+  //   012345678911111111112222222222333333333344444444
+  //             01234567890123456789012345678901234567
+  if (p_vtec[0] != '/' || p_vtec[47] != '/') {
+    return false;
+  }
+  if (p_vtec[2] != '.' || p_vtec[6] != '.' || p_vtec[11] != '.' ||
+      p_vtec[14] != '.' || p_vtec[16] != '.' || p_vtec[21] != '.') {
+    return false;
+  }
+  if (p_vtec[28] != 'T' || p_vtec[41] != 'T') {
+    return false;
+  }
+  if (p_vtec[33] != 'Z' || p_vtec[46] != 'Z') {
+    return false;
+  }
+  if (p_vtec[34] != '-') {
     return false;
   }
 
-  *phen_cat = lookup_phen_cat(p_vtec[12], p_vtec[13]);
-  *phen_sig = lookup_phen_sig(p_vtec[15]);
+  *cat = lookup_phen_cat(p_vtec[12], p_vtec[13]);
+  *sig = lookup_phen_sig(p_vtec[15]);
   return true;
 }
 
+struct get_full_body_ctx {
+  // Response body buffer
+  char buf[2048];
+  // Write position in buffer
+  size_t pos;
+};
+
 void get_full_body_cb(struct http_request *req) {
+  struct get_full_body_ctx * ctx = (struct get_full_body_ctx*) req->caller_ctx;
+
   // Read the whole body
-  while (req->client->connected() && response_i < sizeof(response) - 1) {
+  while (req->client->connected() && ctx->pos < sizeof(ctx->buf) - 1) {
     int c = req->client->read();
     if (c != -1) {
-      response[response_i++] = (char) c;
+      ctx->buf[ctx->pos++] = (char) c;
+    }
+  }
+}
+
+struct parse_vtecs_ctx {
+  // Most recently read chars.  We need enough to hold a full
+  // P-VTEC string, which is exactly 48 chars.
+  char buf[48];
+  // Write position in buffer
+  size_t pos;
+
+  // Phenomena category of VTEC with highest significance
+  phen_cat_t cat;
+  // Highest significance VTEC
+  phen_sig_t sig;
+};
+
+void rotate_left(char array[], size_t size) {
+  if (size < 2) {
+    return;
+  }
+  char head = array[0];
+  for (int i = 0; i < size; i++) {
+    array[i] = array[i + 1];
+  }
+  array[size - 1] = head;
+}
+
+void parse_vtecs_cb(struct http_request *req) {
+  struct parse_vtecs_ctx * ctx = (struct parse_vtecs_ctx*) req->caller_ctx;
+  memset(ctx->buf, 0, sizeof(ctx->buf));
+  phen_cat_t cat;
+  phen_sig_t sig;
+
+  // Read one characer at a time into the buffer, checking each time if we
+  // have a P-VTEC string there to parse.  The buffer is big enough for
+  // exactly one P-VTEC string, so we shift down by one to make room.  
+  // This is not very CPU efficient, but it's very memory efficient.
+  while (req->client->connected()) {
+    char c = req->client->read();
+    if (c == -1) {
+      break;
+    }
+
+    // If we're at the end of the buffer, shift everything to the left
+    // one character.
+    if (ctx->pos == sizeof(ctx->buf)) {
+      rotate_left(ctx->buf, sizeof(ctx->buf));
+      ctx->pos--;
+    }
+
+    // Read one character
+    ctx->buf[ctx->pos++] = (char) c;
+
+    // Try to parse it as a P-VTEC.  If it is, and it's more significant than
+    // previously parsed ones, keep it.
+    if (parse_vtec(ctx->buf, &cat, &sig)) {
+      if (sig >= ctx->sig) {
+        ctx->cat = cat;
+        ctx->sig = sig;
+      }
     }
   }
 }
@@ -214,9 +330,9 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   strncpy(path + path_i, location, sizeof(path) - path_i - 1);
   path_i = strlen(path);
 
-  Serial.println(path);
-  memset(response, 0, sizeof(response));
-  response_i = 0;
+  // The whole response can fit in memory
+  struct get_full_body_ctx ctx;
+  memset(&ctx, 0, sizeof(get_full_body_ctx));
 
   struct http_request req;
   http_request_init(&req);
@@ -226,6 +342,7 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   req.path_and_query = path;
   req.header_cb = NULL;
   req.body_cb = get_full_body_cb;
+  req.caller_ctx = &ctx;
 
   http_get(&req);
 
@@ -235,15 +352,18 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
     return false;
   }
 
-  if (response_i == 0) {
+  if (ctx.pos == 0) {
     Serial.println("Got empty geocode response");
     return false;
   }
 
-  Serial.print("Geocode response: ");
-  Serial.println(response);
+  // Ensure the response is NUL-terminated so we can use it as a normal string.
+  ctx.buf[min(ctx.pos, sizeof(ctx.buf) - 1)] = '\0';
 
-  if (!parse_geocode_response(response, lat, lat_size, lon, lon_size)) {
+  Serial.print("Geocode response: ");
+  Serial.println(ctx.buf);
+
+  if (!parse_geocode_response(ctx.buf, lat, lat_size, lon, lon_size)) {
     Serial.println("Error parsing response");
     return false;
   }
@@ -256,77 +376,7 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   return true;
 }
 
-bool parse_active_alerts_response(const char *json, phen_cat_t *phen_cat, phen_sig_t * phen_sig) {
-  const int tokens_size = 500;
-  jsmntok_t tokens[tokens_size];
-  jsmn_parser parser;
-
-  jsmn_init(&parser);
-  int num_tokens = jsmn_parse(&parser, json, strlen(json), tokens, tokens_size);
-  if (num_tokens < 0) {
-    Serial.println("Failed to parse the grid JSON");
-    return false;
-  }
-
-  if (num_tokens < 1 || tokens[0].type != JSMN_OBJECT) {
-    Serial.println("Top level grid item was not an object.");
-    return false;
-  }
-
-  int features_i = find_json_prop(json, tokens, num_tokens, 0, "features");
-  if (features_i == -1) {
-    Serial.println("JSON missing features");
-    return false;
-  }
-
-  // Walk through the remaining tokens looking for feature objects in the features array.
-  // Each feature is a watch, warning, advisory, or similar.  We'll select the phenomena
-  // for the one with the highest significance (if there's a tie, we'll have the last one).
-  for (int feature_i = features_i + 1; feature_i < num_tokens; feature_i++) {
-    if (tokens[feature_i].type == JSMN_OBJECT && tokens[feature_i].parent == features_i) {
-      int properties_i = find_json_prop(json, tokens, num_tokens, feature_i, "properties");
-      if (properties_i == -1) {
-        Serial.println("JSON missing features[].properties");
-        continue;
-      }
-
-      int parameters_i = find_json_prop(json, tokens, num_tokens, properties_i, "parameters");
-      if (parameters_i == -1) {
-        Serial.println("JSON missing features[].properties.parameters");
-        continue;
-      }
-
-      int vtecs_i = find_json_prop(json, tokens, num_tokens, parameters_i, "VTEC");
-      if (vtecs_i == -1) {
-        Serial.println("JSON missing features[].properties.parameters.VTEC");
-        continue;
-      }
-
-      // The VTEC value is an array of strings, but there's just going to be one (probably)
-      int vtec_i = vtecs_i + 1;
-
-      char vtec_str[49];
-      memset(vtec_str, 0, sizeof(vtec_str));
-      size_t vtec_len = tokens[vtec_i].end - tokens[vtec_i].start;
-      strncpy(vtec_str, json + tokens[vtec_i].start, min(vtec_len, sizeof(vtec_str) - 1));
-
-      // Parse out the phenomena and significance
-      phen_cat_t this_cat = CAT_UNKNOWN;
-      phen_sig_t this_sig = SIG_UNKNOWN;
-      if (parse_vtec(json + tokens[vtec_i].start, phen_cat, phen_sig)) {
-        // Write out the values if they're at least as significant as previous ones
-        if (this_sig >= *phen_sig) {
-          *phen_cat = this_cat;
-          *phen_sig = this_sig;
-        }
-      }
-    }
-  }
-
-  return true;
-}
-
-bool get_active_alert(const char *lat, const char *lon, phen_cat_t *phen_cat, phen_sig_t *phen_sig) {
+bool get_active_alert(const char *lat, const char *lon, phen_cat_t *cat, phen_sig_t *sig) {
   Serial.println("Getting alerts");
 
   char path[128];
@@ -342,8 +392,12 @@ bool get_active_alert(const char *lat, const char *lon, phen_cat_t *phen_cat, ph
   strncpy(path + path_i, lon, sizeof(path) - path_i - 1);
   path_i = strlen(path);
 
-  memset(response, 0, sizeof(response));
-  response_i = 0;
+  // Alert responses may be so large they can't fit in memory.  Use a
+  // streaming body callback that just extracts VTEC strings.
+  parse_vtecs_ctx ctx;
+  memset(&ctx, 0, sizeof(parse_vtecs_ctx));
+  ctx.cat = CAT_UNKNOWN;
+  ctx.sig = SIG_UNKNOWN;
 
   struct http_request req;
   http_request_init(&req);
@@ -352,7 +406,8 @@ bool get_active_alert(const char *lat, const char *lon, phen_cat_t *phen_cat, ph
   req.ssl = true;
   req.path_and_query = path;
   req.header_cb = NULL;
-  req.body_cb = get_full_body_cb;
+  req.body_cb = parse_vtecs_cb;
+  req.caller_ctx = &ctx;
 
   http_get(&req);
 
@@ -362,19 +417,8 @@ bool get_active_alert(const char *lat, const char *lon, phen_cat_t *phen_cat, ph
     return false;
   }
 
-  if (response_i == 0) {
-    Serial.println("Got empty alerts response");
-    return false;
-  }
-
-  Serial.print("Alerts response: ");
-  Serial.println(response);
-
-  if (!parse_active_alerts_response(response, phen_cat, phen_sig)) {
-    Serial.println("Error parsing response");
-    return false;
-  }
-
+  *cat = ctx.cat;
+  *sig = ctx.sig;
   return true;
 }
 
@@ -434,21 +478,22 @@ void weather_loop(void) {
       }
     }
 
-    // Get the phenomenon category for the current active alert.
-    // If there is more than 1 active alert, we'll pick one arbitrarily.
-    if (!get_active_alert(lat, lon, &phen_cat, &phen_sig)) {
+    // Get the most significant phenomenon for current alerts.
+    phen_cat_t cat;
+    phen_sig_t sig;
+    if (!get_active_alert(lat, lon, &cat, &sig)) {
       next_time = now + (1000 * 10);
       return;
     }
 
     Serial.print("Active phenomenon category: ");
-    Serial.println(phen_cat);
+    Serial.println(cat);
     Serial.print("Significance: ");
-    Serial.println(phen_sig);
+    Serial.println(sig);
 
     // Update the lights.  Warnings get high speed, all else low.
-    bool fast = phen_sig == SIG_WARNING;
-    switch (phen_cat) {
+    bool fast = sig == SIG_WARNING;
+    switch (cat) {
       case CAT_AIR_QUALITY:
         lights_configure(ANIM_PULSE, fast, COLOR_LIGHT_GRAY, COLOR_YELLOW);
         break;
@@ -500,12 +545,6 @@ void weather_loop(void) {
         break;
     }
 
-    //next_time = now + (1000 * 60 * FORECAST_PERIOD_MINUTES);
-    next_time = now + (1000);
+    next_time = now + (1000 * 60 * FORECAST_PERIOD_MINUTES);
   }
-}
-
-void weather_get_active_phenomena(phen_cat_t *cat, phen_sig_t *sig) {
-  *cat = phen_cat;
-  *sig = phen_sig;
 }

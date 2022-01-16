@@ -69,14 +69,14 @@ bool parse_header(char *str, char **name, char **value) {
   return false;
 }
 
-bool parse_url(struct url_parts *parts, const char *url) {
-  enum parse_state {
+bool parse_url(url_parts *parts, const char *url) {
+  typedef enum {
     in_scheme,
     in_colon_and_slashes,
     in_host,
     in_port,
     in_path_and_query,
-  };
+  } parse_state;
 
   char *scheme = parts->scheme;
   const char *scheme_last = parts->scheme + sizeof(parts->scheme) - 1;
@@ -161,7 +161,7 @@ bool parse_url(struct url_parts *parts, const char *url) {
   return state == in_path_and_query;
 }
 
-void http_request_init(struct http_request *req) {
+void http_request_init(http_request *req) {
   req->host = "";
   req->port = 80;
   req->ssl = false;
@@ -178,13 +178,13 @@ void http_request_init(struct http_request *req) {
 
 #define DBG() print_dbg_prefix(req);
 
-void print_dbg_prefix(struct http_request *req) {
+void print_dbg_prefix(http_request  *req) {
   Serial.print("http #");
   Serial.print(req->id, DEC);
   Serial.print(": ");
 }
 
-void http_request_disconnect(struct http_request *req) {
+void http_request_disconnect(http_request  *req) {
   if (req->client != NULL) {
     req->client->stop();
     delete req->client;
@@ -194,7 +194,7 @@ void http_request_disconnect(struct http_request *req) {
   req->client = NULL;
 }
 
-bool http_request_connect(struct http_request *req) {
+bool http_request_connect(http_request  *req) {
   http_request_disconnect(req);
 
   DBG();
@@ -217,7 +217,7 @@ bool http_request_connect(struct http_request *req) {
   }
 }
 
-void http_get(struct http_request *req) {
+void http_get(http_request  *req) {
   DBG();
   Serial.println("get");
 

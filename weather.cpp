@@ -26,7 +26,7 @@ typedef enum {
   CAT_STORM,
   CAT_ICE,
   CAT_TORNADO,
-} phen_cat_t;
+} phen_cat;
 
 // P-VTEC "significance" (s) field.  Ordered least- to most-significant.
 typedef enum {
@@ -38,7 +38,7 @@ typedef enum {
   SIG_ADVISTORY,
   SIG_WATCH,
   SIG_WARNING,
-} phen_sig_t;
+} phen_sig;
 
 // Mappings of P-VTEC "pp" (phenomena) fields to our own categories.
 int pp_cats[][3] = {
@@ -103,22 +103,22 @@ int pp_cats[][3] = {
 };
 
 // Most recently read alert phenomena and significance
-phen_cat_t most_significant_cat;
-phen_sig_t most_significant_sig;
+phen_cat most_significant_cat;
+phen_sig most_significant_sig;
 
 // URL-encoded location from config.h
 char encoded_location[64];
 
-phen_cat_t lookup_phen_cat(char p0, char p1) {
+phen_cat lookup_phen_cat(char p0, char p1) {
   for (int i = 0; i < (sizeof(pp_cats) / sizeof(pp_cats[0])); i++) {
     if (pp_cats[i][0] == p0 && pp_cats[i][1] == p1) {
-      return (phen_cat_t) pp_cats[i][2];
+      return (phen_cat) pp_cats[i][2];
     }
   }
   return CAT_UNKNOWN;
 }
 
-phen_sig_t lookup_phen_sig(char s0) {
+phen_sig lookup_phen_sig(char s0) {
   switch (s0) {
     case 'W':
       return SIG_WARNING;
@@ -139,7 +139,7 @@ phen_sig_t lookup_phen_sig(char s0) {
   }
 }
 
-bool parse_vtec(const char *p_vtec, phen_cat_t *cat, phen_sig_t *sig) {
+bool parse_vtec(const char *p_vtec, phen_cat *cat, phen_sig *sig) {
   // VTEC is explained at https://www.weather.gov/vtec/.  It's a simple text encoding
   // for weather phenomena.  P-VTEC format follows this format:
   //
@@ -172,15 +172,15 @@ bool parse_vtec(const char *p_vtec, phen_cat_t *cat, phen_sig_t *sig) {
   return true;
 }
 
-struct get_full_body_ctx {
+typedef struct {
   // Response body buffer
   char buf[2048];
   // Write position in buffer
   size_t pos;
-};
+} get_full_body_ctx;
 
-void get_full_body_cb(struct http_request *req) {
-  struct get_full_body_ctx * ctx = (struct get_full_body_ctx*) req->caller_ctx;
+void get_full_body_cb(http_request *req) {
+  get_full_body_ctx * ctx = (get_full_body_ctx*) req->caller_ctx;
 
   // Read the whole body
   while (req->client->connected() && ctx->pos < sizeof(ctx->buf) - 1) {
@@ -191,7 +191,7 @@ void get_full_body_cb(struct http_request *req) {
   }
 }
 
-struct parse_vtecs_ctx {
+typedef struct {
   // Most recently read chars.  We need enough to hold a full
   // P-VTEC string, which is exactly 48 chars.
   char buf[48];
@@ -199,10 +199,10 @@ struct parse_vtecs_ctx {
   size_t pos;
 
   // Phenomena category of VTEC with highest significance
-  phen_cat_t cat;
+  phen_cat  cat;
   // Highest significance VTEC
-  phen_sig_t sig;
-};
+  phen_sig sig;
+} parse_vtecs_ctx;
 
 void rotate_left(char array[], size_t size) {
   if (size < 2) {
@@ -215,15 +215,15 @@ void rotate_left(char array[], size_t size) {
   array[size - 1] = head;
 }
 
-void parse_vtecs_cb(struct http_request *req) {
-  struct parse_vtecs_ctx * ctx = (struct parse_vtecs_ctx*) req->caller_ctx;
+void parse_vtecs_cb(http_request *req) {
+  parse_vtecs_ctx * ctx = (parse_vtecs_ctx*) req->caller_ctx;
   memset(ctx->buf, 0, sizeof(ctx->buf));
-  phen_cat_t cat;
-  phen_sig_t sig;
+  phen_cat cat;
+  phen_sig sig;
 
   // Read one characer at a time into the buffer, checking each time if we
   // have a P-VTEC string there to parse.  The buffer is big enough for
-  // exactly one P-VTEC string, so we shift down by one to make room.  
+  // exactly one P-VTEC string, so we shift down by one to make room.
   // This is not very CPU efficient, but it's very memory efficient.
   while (req->client->connected()) {
     char c = req->client->read();
@@ -331,10 +331,10 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   path_i = strlen(path);
 
   // The whole response can fit in memory
-  struct get_full_body_ctx ctx;
-  memset(&ctx, 0, sizeof(get_full_body_ctx));
+  get_full_body_ctx ctx;
+  memset(&ctx, 0, sizeof(ctx));
 
-  struct http_request req;
+  http_request req;
   http_request_init(&req);
   req.host = "geocode.arcgis.com";
   req.port = 443;
@@ -376,7 +376,7 @@ bool resolve_location_to_lat_lon(const char *location, char *lat, size_t lat_siz
   return true;
 }
 
-bool get_active_alert(const char *lat, const char *lon, phen_cat_t *cat, phen_sig_t *sig) {
+bool get_active_alert(const char *lat, const char *lon, phen_cat *cat, phen_sig *sig) {
   Serial.println("Getting alerts");
 
   char path[128];
@@ -395,11 +395,11 @@ bool get_active_alert(const char *lat, const char *lon, phen_cat_t *cat, phen_si
   // Alert responses may be so large they can't fit in memory.  Use a
   // streaming body callback that just extracts VTEC strings.
   parse_vtecs_ctx ctx;
-  memset(&ctx, 0, sizeof(parse_vtecs_ctx));
+  memset(&ctx, 0, sizeof(ctx));
   ctx.cat = CAT_UNKNOWN;
   ctx.sig = SIG_UNKNOWN;
 
-  struct http_request req;
+  http_request req;
   http_request_init(&req);
   req.host = "api.weather.gov";
   req.port = 443;
@@ -479,8 +479,8 @@ void weather_loop(void) {
     }
 
     // Get the most significant phenomenon for current alerts.
-    phen_cat_t cat;
-    phen_sig_t sig;
+    phen_cat cat;
+    phen_sig sig;
     if (!get_active_alert(lat, lon, &cat, &sig)) {
       next_time = now + (1000 * 10);
       return;

@@ -5,39 +5,38 @@
 #include "lights.h"
 
 // Each channel is 0-1
-struct rgb_t {
+typedef struct {
   float r;
   float g;
   float b;
-};
+} rgb;
 
-// Defines an rgb_t
-#define RGB_HEX(R,G,B)  ((struct rgb_t) { ((R) / 255.0), ((G) / 255.0), ((B) / 255.0) })
 
-static struct rgb_t colors[COLOR_MAX + 1];
+// All colors are RGB order in this struct
+typedef struct {
+  anim animation;
+  bool fast;
+  color base_color;
+  color highlight_color;
+
+  // LED states, RGB color space
+  rgb target_colors[LED_COUNT];
+  rgb current_colors[LED_COUNT];
+  rgb source_colors[LED_COUNT];
+  int fade_in_steps;
+  int fade_out_steps;
+} cloud_state;
+
+// Defines an rgb
+#define RGB_HEX(R,G,B)  ((rgb) { ((R) / 255.0), ((G) / 255.0), ((B) / 255.0) })
 
 #define MIN3(X,Y,Z)  (X < Y ? (X < Z ? X : Z) : (Y < Z ? Y : Z))
 #define MAX3(X,Y,Z)  (X > Y ? (X > Z ? X : Z) : (Y > Z ? Y : Z))
 
-// All colors are RGB order in this struct
-struct cloud_state {
-  anim_t animation;
-  bool fast;
-  color_t base_color;
-  color_t highlight_color;
-
-  // LED states, RGB color space
-  struct rgb_t target_colors[LED_COUNT];
-  struct rgb_t current_colors[LED_COUNT];
-  struct rgb_t source_colors[LED_COUNT];
-  int fade_in_steps;
-  int fade_out_steps;
-};
-static struct cloud_state state;
-
+static rgb colors[COLOR_MAX + 1];
+static cloud_state state;
 static byte flood_queue[LED_COUNT];
 static byte swirl_queue[LED_COUNT];
-
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 void lights_setup(void) {
@@ -160,9 +159,9 @@ void rotate_left(byte array[], byte size) {
 /*
    Sets the desired RGB color for the specified LED.
 */
-void set_color_rgb(const byte led, const struct rgb_t rgb) {
-  if (state.target_colors[led].r != rgb.r || state.target_colors[led].g != rgb.g || state.target_colors[led].b != rgb.b) {
-    state.target_colors[led] = rgb;
+void set_color_rgb(const byte led, const rgb c) {
+  if (state.target_colors[led].r != c.r || state.target_colors[led].g != c.g || state.target_colors[led].b != c.b) {
+    state.target_colors[led] = c;
     // Reset the source so the next color step knows where we started from
     state.source_colors[led] = state.current_colors[led];
   }
@@ -170,7 +169,7 @@ void set_color_rgb(const byte led, const struct rgb_t rgb) {
 /*
    Sets the desired indexed color for the specified LED.
 */
-void set_color(const byte led, const color_t color_id) {
+void set_color(const byte led, const color color_id) {
   set_color_rgb(led, colors[color_id]);
 }
 
@@ -185,7 +184,7 @@ void animate_precipitation() {
   if (last_time == 0 || time - last_time > (state.fast ? 100 : 256)) {
     for (byte i = 0; i < LED_COUNT; i++) {
       byte r = random(LED_COUNT);
-      color_t color = COLOR_BLACK;
+      color color = COLOR_BLACK;
       if (r == 0) {
         color = state.base_color;
       } else if (r == 1) {
@@ -203,7 +202,7 @@ void animate_flood() {
   unsigned long time = millis();
 
   // Set the colors from the queue
-  color_t color_ids[3];
+  color color_ids[3];
   color_ids[0] = COLOR_BLACK;
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
@@ -250,7 +249,7 @@ void animate_swirl() {
   unsigned long time = millis();
 
   // Set the colors from the queue
-  color_t color_ids[3];
+  color color_ids[3];
   color_ids[0] = COLOR_BLACK;
   color_ids[1] = state.base_color;
   color_ids[2] = state.highlight_color;
@@ -279,7 +278,7 @@ void animate_default() {
   state.fade_out_steps = 1024;
 
   if (next_time == 0 || time > next_time) {
-    struct rgb_t new_color;
+    rgb new_color;
     new_color.r = random(256) / 255.0;
     new_color.g = random(256) / 255.0;
     new_color.b = random(256) / 255.0;
@@ -315,9 +314,9 @@ void animate_default() {
 */
 void step_colors() {
   for (int i = 0; i < LED_COUNT; i++) {
-    struct rgb_t tgt = state.target_colors[i];
-    struct rgb_t cur = state.current_colors[i];
-    struct rgb_t src = state.source_colors[i];
+    rgb tgt = state.target_colors[i];
+    rgb cur = state.current_colors[i];
+    rgb src = state.source_colors[i];
 
     /*
        Each step moves "cur" closer to "tgt" by an amount that's a fraction of
@@ -373,7 +372,7 @@ void step_colors() {
 */
 void update_leds() {
   for (int i = 0; i < LED_COUNT; i++) {
-    struct rgb_t rgb = state.current_colors[i];
+    rgb rgb = state.current_colors[i];
     strip.setPixelColor(i, rgb.r * 255, rgb.g * 255, rgb.b * 255);
   }
   strip.show();
@@ -394,7 +393,7 @@ void print_state() {
 #endif
 }
 
-void print_rgb(struct rgb_t rgb) {
+void print_rgb(rgb rgb) {
 #ifdef DEBUG
   Serial.print(rgb.r);
   Serial.print(",");
@@ -429,7 +428,7 @@ void lights_loop(void) {
   update_leds();
 }
 
-void lights_configure(anim_t animation, bool fast, color_t base_color, color_t highlight_color) {
+void lights_configure(anim animation, bool fast, color base_color, color highlight_color) {
   state.animation = animation;
   state.fast = fast;
   state.base_color = base_color;

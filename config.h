@@ -2,7 +2,7 @@
  * Pufflux for the Adafruit Feather M0 WiFi - ATSAMD21 + ATWINC1500 
  * (Product ID: 3010)
  *
- * Copyright 2013-2021 Shaw Terwilliger <sterwill@tinfig.com>
+ * Copyright 2013-2022 Shaw Terwilliger <sterwill@tinfig.com>
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.

@@ -16,7 +16,8 @@ and used a garage-door style low power RF transceiver instead. This required an 
 that wifi-enabled microcontrollers are cheap and easy to get, I decided to rebuild version 2 around it. In version 2
 there's only the lamp software, because it can do all its own weather forecast work when it's connected to wifi.
 
-You can find the code for version 1 in the "v1" branch.
+You can find the code for version 1 in the "v1" branch.  There's a lot of Java in v1, including out-of-date
+dependencies.  v2 is just C/C++ for the microcontroller.
 
 # SSL Certificates
 

@@ -6,6 +6,8 @@ colors and an animation style to tell me the weather.
 
 The weather forecast comes from the United States' National Weather Service.
 
+![Pufflux Hanging from the Ceiling](photo.jpg)
+
 ## History
 
 This is version 2 of the project. Version 1 was built around an AVR microcontroller that didn't have any wifi hardware,
